@@ -138,7 +138,6 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
       # Scan des vulnérabilités : le pipeline échoue s'il y a du CRITICAL corrigeable.
-      # (le commentaire disait CRITICAL/HIGH alors que seul CRITICAL était vérifié)
       # Action épinglée sur un commit précis (v0.36.0) : ses tags ont été piratés en
       # mars 2026 (avis GHSA-69fq-xp46-6x23), un commit ne peut pas être modifié.
       - name: Scan image with Trivy
@@ -148,7 +147,7 @@ jobs:
           format: table
           exit-code: '1'
           ignore-unfixed: true
-          severity: CRITICAL
+          severity: HIGH
 
       # Vérifie que le conteneur démarre vraiment et devient "healthy",
       # avec les mêmes restrictions que dans docker-compose (sans privilèges).
