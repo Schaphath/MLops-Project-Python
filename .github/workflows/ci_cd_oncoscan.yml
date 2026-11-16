@@ -43,11 +43,12 @@ jobs:
           cache: pip
           cache-dependency-path: |
             Api/requirements_api.txt
+            constraints-security.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r Api/requirements_api.txt
+          python -m pip install -r Api/requirements_api.txt -c constraints-security.txt
           python -m pip install pytest pytest-json-report
 
       - name: Run model tests
@@ -137,17 +138,34 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-      # Scan des vulnérabilités : le pipeline échoue s'il y a du CRITICAL corrigeable.
+      # Scan des vulnérabilités en deux temps :
+      # 1) rapport complet CRITICAL + HIGH, affiché mais NON bloquant
+      #    (les nouvelles failles HIGH sont corrigées via les PR Dependabot)
+      # 2) blocage uniquement sur CRITICAL qui ont un correctif
+      # Exceptions justifiées : fichier .trivyignore à la racine (une CVE par ligne + commentaire).
       # Action épinglée sur un commit précis (v0.36.0) : ses tags ont été piratés en
       # mars 2026 (avis GHSA-69fq-xp46-6x23), un commit ne peut pas être modifié.
-      - name: Scan image with Trivy
+      - name: Scan image with Trivy (report CRITICAL/HIGH)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REF }}
+          format: table
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+
+      - name: Scan image with Trivy (block on CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_SKIP_DB_UPDATE: 'true'   # base déjà téléchargée par l'étape précédente
         with:
           image-ref: ${{ env.IMAGE_REF }}
           format: table
           exit-code: '1'
           ignore-unfixed: true
-          severity: HIGH
+          severity: CRITICAL
+          trivyignores: .trivyignore
 
       # Vérifie que le conteneur démarre vraiment et devient "healthy",
       # avec les mêmes restrictions que dans docker-compose (sans privilèges).

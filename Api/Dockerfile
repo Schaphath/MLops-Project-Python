@@ -25,7 +25,9 @@ RUN python -m venv "$VIRTUAL_ENV" && \
 # On copie d'abord SEULEMENT les dépendances pour profiter du cache Docker.
 # Les versions doivent être fixées (scikit-learn==1.8.0, celle de l'entraînement).
 COPY Api/requirements_api.txt ./requirements_api.txt
-RUN pip install -r requirements_api.txt
+# -c : versions minimales de sécurité (voir constraints-security.txt à la racine)
+COPY constraints-security.txt ./constraints-security.txt
+RUN pip install -r requirements_api.txt -c constraints-security.txt
 
 #-----------------#
 #  RUNTIME STAGE  #

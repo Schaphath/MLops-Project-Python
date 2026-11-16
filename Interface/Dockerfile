@@ -23,7 +23,9 @@ RUN python -m venv "$VIRTUAL_ENV" && \
     pip install --upgrade pip
 
 COPY Interface/requirements_interface.txt ./requirements_interface.txt
-RUN pip install -r requirements_interface.txt
+# -c : versions minimales de sécurité (voir constraints-security.txt à la racine)
+COPY constraints-security.txt ./constraints-security.txt
+RUN pip install -r requirements_interface.txt -c constraints-security.txt
 
 #-----------------#
 #  RUNTIME STAGE  #

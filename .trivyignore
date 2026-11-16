@@ -1,0 +1,3 @@
+# Exceptions Trivy : une CVE par ligne, toujours avec la raison et une date de revue.
+# Exemple :
+# CVE-2026-00000  # pas exploitable ici : <raison>. A revoir le 2027-01-01
