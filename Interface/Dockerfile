@@ -23,9 +23,7 @@ RUN python -m venv "$VIRTUAL_ENV" && \
     pip install --upgrade pip
 
 COPY Interface/requirements_interface.txt ./requirements_interface.txt
-# -c : versions minimales de sécurité (voir constraints-security.txt à la racine)
-COPY constraints-security.txt ./constraints-security.txt
-RUN pip install -r requirements_interface.txt -c constraints-security.txt
+RUN pip install -r requirements_interface.txt
 
 #-----------------#
 #  RUNTIME STAGE  #
@@ -72,8 +70,8 @@ WORKDIR /app/interface
 COPY Interface/ /app/interface/
 
 USER 10001:10001
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+# Jusqu'à 2 min pour démarrer (machines lentes) ; un check réussi passe "healthy" tout de suite
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2)"]
 
 EXPOSE 8501

@@ -1,4 +1,3 @@
-
 """Interface web"""
 
 from __future__ import annotations
@@ -21,11 +20,16 @@ import psycopg2
 import requests
 import streamlit as st
 from psycopg2 import pool
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # paquet PyPI : python-dotenv (et non "dotenv")
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+# Chargement du .env à la racine du projet (Interface/../.env).
+# - En local : lit les variables du .env (voir .env.example).
+# - Dans Docker : le fichier n'existe pas dans l'image, rien n'est chargé ;
+#   les variables viennent du docker-compose.
+# override=False : une variable déjà définie dans l'environnement n'est jamais écrasée.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 # Paramètres globaux de l'application
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")

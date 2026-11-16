@@ -11,13 +11,17 @@ from typing import Literal
 import joblib
 import pandas as pd
 import sklearn
-from dotenv import load_dotenv
+from dotenv import load_dotenv  
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security, status
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, ConfigDict, Field
 
-# Charge automatiquement le fichier .env
-load_dotenv()
+# Chargement du .env à la racine du projet (Api/../.env).
+# - En local : lit les variables du .env (voir .env.example).
+# - Dans Docker : le fichier n'existe pas dans l'image, rien n'est chargé ;
+#   les variables viennent du docker-compose.
+# override=False : une variable déjà définie dans l'environnement n'est jamais écrasée.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 # Logging
 logging.basicConfig(

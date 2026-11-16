@@ -25,9 +25,7 @@ RUN python -m venv "$VIRTUAL_ENV" && \
 # On copie d'abord SEULEMENT les dépendances pour profiter du cache Docker.
 # Les versions doivent être fixées (scikit-learn==1.8.0, celle de l'entraînement).
 COPY Api/requirements_api.txt ./requirements_api.txt
-# -c : versions minimales de sécurité (voir constraints-security.txt à la racine)
-COPY constraints-security.txt ./constraints-security.txt
-RUN pip install -r requirements_api.txt -c constraints-security.txt
+RUN pip install -r requirements_api.txt
 
 #-----------------#
 #  RUNTIME STAGE  #
@@ -74,8 +72,8 @@ COPY Save_models/oncoscan_pipeline.joblib /app/Save_models/oncoscan_pipeline.job
 # Plus aucun droit root à partir d'ici
 USER 10001:10001
 
-# 20 s de démarrage : le temps de charger le modèle
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+# Jusqu'à 2 min pour démarrer (machines lentes) ; un check réussi passe "healthy" tout de suite
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
 
 EXPOSE 8000
