@@ -3,7 +3,7 @@ streamlit==1.67.0
 requests==2.32.3
 pandas==2.2.3
 psycopg2-binary==2.9.10
-bcrypt==4.3.0
+bcrypt==5.0.0
 
 # Correctifs de sécurité de sous-dépendances avec versions fixes.
 pillow==13.0.0  # CVE-2026-112393/112398/112403/112900 (CRITICAL) ; nécessite streamlit >= 1.66.1
