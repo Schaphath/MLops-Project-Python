@@ -1,4 +1,4 @@
--- PostgreSQL Schema - OncoScan v2.0.0
+-- PostgreSQL Schema - OncoScan v2.1.0
 
 -- 1. TABLE DES UTILISATEURS (Praticiens / Médecins)
 CREATE TABLE IF NOT EXISTS users (
@@ -8,20 +8,23 @@ CREATE TABLE IF NOT EXISTS users (
     full_name VARCHAR(100),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_users_username UNIQUE (username),
-    CONSTRAINT chk_username_length CHECK (char_length(username) BETWEEN 3 AND 30)
+    -- Même règle que USERNAME_PATTERN côté appli, en minuscules
+    -- (sinon "Dr.Martin" et "dr.martin" peuvent coexister si on insère hors de l'appli)
+    CONSTRAINT chk_username_format CHECK (username ~ '^[a-z0-9_.-]{3,30}$')
 );
 
 -- 2. TABLE DES PRÉDICTIONS (Historique des analyses cytologiques)
 CREATE TABLE IF NOT EXISTS predictions (
     id BIGSERIAL PRIMARY KEY,
 
-    -- Clé étrangère vers le praticien
+    -- Praticien ; RESTRICT pour ne jamais perdre l'historique
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
 
-    -- Identifiant du patient pour suivi dans l'interface
-    patient_id VARCHAR(50) NOT NULL,
+    -- Identifiant pseudonymisé du patient (pas de nom : données de santé)
+    patient_id VARCHAR(50) NOT NULL
+        CONSTRAINT chk_patient_id_not_blank CHECK (btrim(patient_id) <> ''),
 
-    -- Les 5 variables cellulaires réelles (OncoScan v2)
+    -- Les 5 variables cellulaires (mêmes bornes que l'API : à modifier ensemble)
     perimeter DOUBLE PRECISION NOT NULL
         CONSTRAINT chk_perimeter CHECK (perimeter > 40.0 AND perimeter <= 250.0),
     concave_points DOUBLE PRECISION NOT NULL
@@ -43,22 +46,35 @@ CREATE TABLE IF NOT EXISTS predictions (
             probability_malignant IS NULL OR probability_malignant BETWEEN 0.0 AND 1.0
         ),
 
-    -- Validation/Feedback par le médecin spécialiste (Maligne, Bénigne ou Non confirmé)
+    -- Version du modèle qui a produit la prédiction.
+    -- Sans ça, impossible de comparer deux versions ou de retrouver d'où vient une erreur.
+    model_version VARCHAR(20) NOT NULL DEFAULT 'inconnue',
+
+    -- Validation par le médecin (base pour mesurer la vraie performance en prod)
     doctor_feedback VARCHAR(15) NOT NULL DEFAULT 'UNCONFIRMED'
         CONSTRAINT chk_doctor_feedback CHECK (doctor_feedback IN ('UNCONFIRMED', 'M', 'B')),
+    -- Qui a validé et quand : un feedback sans auteur ne vaut pas grand-chose
+    feedback_by BIGINT REFERENCES users(id) ON DELETE RESTRICT,
+    feedback_at TIMESTAMPTZ,
+    CONSTRAINT chk_feedback_complete CHECK (
+        (doctor_feedback = 'UNCONFIRMED' AND feedback_by IS NULL AND feedback_at IS NULL)
+        OR (doctor_feedback <> 'UNCONFIRMED' AND feedback_by IS NOT NULL AND feedback_at IS NOT NULL)
+    ),
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. INDEX DE PRODUCTION OPTIMISÉS
--- Recherche rapide de l'historique d'un praticien trié par date
-CREATE INDEX IF NOT EXISTS idx_predictions_user_date 
+-- 3. INDEX
+-- Historique d'un praticien trié par date (requête principale de l'appli)
+CREATE INDEX IF NOT EXISTS idx_predictions_user_date
     ON predictions (user_id, created_at DESC);
 
--- Filtre par diagnostic ou alerte dans l'historique
-CREATE INDEX IF NOT EXISTS idx_predictions_label 
-    ON predictions (prediction, created_at DESC);
+-- Suivi d'un patient chez un praticien
+-- (avant : index sur patient_id seul, alors que tout est filtré par user_id)
+CREATE INDEX IF NOT EXISTS idx_predictions_user_patient
+    ON predictions (user_id, patient_id);
 
--- Recherche rapide par identifiant patient
-CREATE INDEX IF NOT EXISTS idx_predictions_patient 
-    ON predictions (patient_id);
+-- Prédictions en attente de validation, pour le suivi de performance
+CREATE INDEX IF NOT EXISTS idx_predictions_feedback_pending
+    ON predictions (created_at DESC)
+    WHERE doctor_feedback = 'UNCONFIRMED';

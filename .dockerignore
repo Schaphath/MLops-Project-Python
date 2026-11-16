@@ -1,55 +1,21 @@
-# À placer à la racine du contexte de build (là où se trouve le dossier Api/)
-# Le contexte de build est "." (racine du projet) : tout ce qui n'est pas listé ici
-# est envoyé à Docker à chaque build.
-
-# Gestion de version
-.git
-.gitignore
-
-# Secrets et configuration locale (ne JAMAIS embarquer dans l'image)
-.env
-.env.*
+# Secrets : ne doivent jamais finir dans une image
 **/.env
 **/.env.*
-**/.streamlit/secrets.toml
-*.pem
-*.key
 
-# Fichiers montés en volume par docker-compose (inutiles dans les images)
-Save_models/
-Database/
-
-# Fichiers Python générés
-**/__pycache__/
+# Inutile dans les images
+.git
+.github
+**/__pycache__
 **/*.pyc
-**/*.pyo
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Environnements virtuels locaux
-.venv/
-venv/
-env/
-
-# Tests, docs et outils de dev (à adapter si votre code en a besoin)
-**/tests/
-docs/
+**/.pytest_cache
+**/.venv
+**/venv
+Data/
+Tests/
+Tests_results/
+Notebooks/
 *.md
 
-# IDE / OS
-.vscode/
-.idea/
-.DS_Store
-
-# Docker lui-même
-Dockerfile*
-**/Dockerfile*
-docker-compose*.yml
-.dockerignore
-
-# Logs locaux d'inférence (ne pas embarquer de données dans l'image)
-**/logs/
-*.csv
+# Ne garder que le modèle servi par l'API (Save_models/ n'est PAS exclu en entier)
+Save_models/*
+!Save_models/oncoscan_pipeline.joblib

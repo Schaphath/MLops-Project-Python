@@ -1,0 +1,37 @@
+{
+  "model": "Logistic Regression",
+  "calibration": "sigmoid",
+  "decision_threshold": 0.3523,
+  "min_precision": 0.9,
+  "features": [
+    "perimeter",
+    "concave_points",
+    "texture",
+    "smoothness",
+    "symmetry"
+  ],
+  "sklearn_version": "1.8.0",
+  "trained_at": "2026-11-16T01:34:56+00:00",
+  "n_train": 445,
+  "n_test": 112,
+  "test_metrics": {
+    "recall": 0.975,
+    "precision": 0.975,
+    "f1": 0.975,
+    "auc": 0.9802,
+    "brier_avant": 0.0447,
+    "brier_apres": 0.0283,
+    "log_loss_avant": 0.197,
+    "log_loss_apres": 0.1413
+  },
+  "calibration_cv": {
+    "aucune": {
+      "brier": 0.0519,
+      "log_loss": 0.2101
+    },
+    "sigmoid": {
+      "brier": 0.0379,
+      "log_loss": 0.1438
+    }
+  }
+}

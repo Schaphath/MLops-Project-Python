@@ -1,4 +1,6 @@
+# À placer dans : .github/dependabot.yml
 # Dependabot ouvre automatiquement des PR quand une version plus récente existe.
+# Chaque PR passe par la CI (tests + scan + smoke test) avant d'être fusionnée.
 version: 2
 updates:
   # Actions GitHub utilisées dans les workflows
@@ -6,11 +8,46 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:            # une seule PR pour toutes les actions
+        patterns: ["*"]
 
-  # Images de base des Dockerfile
+  # Dépendances Python (requirements_api.txt et requirements_interface.txt)
+  # Il manquait : c'est là que se trouvent la plupart des failles de sécurité.
+  - package-ecosystem: pip
+    directories:
+      - /Api
+      - /Interface
+    schedule:
+      interval: weekly
+    groups:
+      python-mineures:    # correctifs regroupés pour éviter 15 PR par semaine
+        update-types: [minor, patch]
+    ignore:
+      # Le modèle est sauvegardé avec scikit-learn 1.8 : changer de version mineure
+      # demande de réentraîner le modèle. On le fait à la main, pas via Dependabot.
+      - dependency-name: scikit-learn
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+
+  # Images de base des Dockerfile.
+  # Ne marche que si le FROM contient la version en clair (pas ${PYTHON_VERSION}).
   - package-ecosystem: docker
     directories:
       - /Api
       - /Interface
     schedule:
       interval: weekly
+    ignore:
+      # Correctifs de 3.12 seulement : passer à 3.13 se décide et se teste à la main
+      - dependency-name: python
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+
+  # Image postgres du docker-compose (absente avant)
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # 16 -> 17 demande une migration des données : jamais automatiquement
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]

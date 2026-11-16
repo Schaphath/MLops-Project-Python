@@ -69,15 +69,19 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q Api Interface Model
 
-      # Vérifie que le docker-compose.yml est valide (avec des valeurs factices)
+      # Vérifie les deux fichiers compose (avec des valeurs factices).
+      # DOCKERHUB_USER est maintenant obligatoire dans le compose : sans lui, cette étape échoue.
       - name: Validate Docker Compose configuration
         env:
+          DOCKERHUB_USER: ci
           DB_NAME: ci_db
           DB_USER: ci_user
           DB_PASSWORD: ci_password
           API_KEY: ci_api_key
           VERSION: ci
-        run: docker compose config --quiet
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.prod.yml config --quiet
 
   # -----------------------------------------------------------------
   # 2) Construction, scan de sécurité et test de démarrage des images
@@ -97,8 +101,9 @@ jobs:
           - name: api
             image: oncoscan-api
             dockerfile: Api/Dockerfile
+          # Même nom que dans le docker-compose (avant : oncoscan-interface)
           - name: interface
-            image: oncoscan-interface
+            image: oncoscan-app
             dockerfile: Interface/Dockerfile
     steps:
       - name: Checkout
@@ -116,20 +121,24 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Construit l'image en local (non publiée) pour la tester
+      # Construit l'image en local (non publiée) pour la tester.
+      # Le modèle est copié dans l'image : il doit être présent dans le dépôt, sinon le build échoue.
       - name: Build image for testing
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           tags: ${{ env.IMAGE_REF }}
+          build-args: |
+            VERSION=ci-${{ github.sha }}
           load: true
           push: false
           pull: true   # récupère la dernière version de l'image de base (correctifs de sécurité)
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-      # Scan des vulnérabilités : le pipeline échoue s'il y a du CRITICAL/HIGH corrigeable.
+      # Scan des vulnérabilités : le pipeline échoue s'il y a du CRITICAL corrigeable.
+      # (le commentaire disait CRITICAL/HIGH alors que seul CRITICAL était vérifié)
       # Action épinglée sur un commit précis (v0.36.0) : ses tags ont été piratés en
       # mars 2026 (avis GHSA-69fq-xp46-6x23), un commit ne peut pas être modifié.
       - name: Scan image with Trivy
@@ -142,7 +151,8 @@ jobs:
           severity: CRITICAL
 
       # Vérifie que le conteneur démarre vraiment et devient "healthy",
-      # avec les mêmes restrictions que dans docker-compose (sans privilèges)
+      # avec les mêmes restrictions que dans docker-compose (sans privilèges).
+      # On teste l'image telle qu'elle sera publiée : plus de montage du modèle.
       - name: Smoke test (container starts and is healthy)
         env:
           NAME: ${{ matrix.name }}
@@ -151,15 +161,7 @@ jobs:
 
           case "$NAME" in
             api)
-              if [ ! -f Save_models/adaboost_pipeline.joblib ]; then
-                echo "::warning::Modèle absent du dépôt : smoke test de l'API ignoré"
-                exit 0
-              fi
-              ARGS=(
-                -e API_KEY=ci-test-key
-                -e MODEL_PATH=/app/Save_models/adaboost_pipeline.joblib
-                -v "$PWD/Save_models:/app/Save_models:ro"
-              )
+              ARGS=(-e API_KEY=ci-test-key)
               ;;
             interface)
               ARGS=(-e API_KEY=ci-test-key -e DB_PASSWORD=ci-test-password)
@@ -199,7 +201,7 @@ jobs:
     needs: build-scan
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45   # le build ARM (émulé) est plus long
     strategy:
       fail-fast: false
       matrix:
@@ -208,16 +210,21 @@ jobs:
             image: oncoscan-api
             dockerfile: Api/Dockerfile
           - name: interface
-            image: oncoscan-interface
+            image: oncoscan-app
             dockerfile: Interface/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Émulation ARM pour publier aussi une image compatible Mac M1/M2 et serveurs ARM
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       # Calcule les noms de tags de l'image
+      # (type=ref,event=tag retiré : il doublait le tag semver avec un "v" devant)
       - name: Generate image metadata
         id: metadata
         uses: docker/metadata-action@v6
@@ -226,7 +233,6 @@ jobs:
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
             type=semver,pattern={{version}}
 
       - name: Log in to Docker Hub
@@ -235,12 +241,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Reconstruit avec le cache du job précédent (rapide) et publie
+      # Reconstruit avec le cache du job précédent et publie.
+      # VERSION est maintenant passé : avant, toutes les images affichaient 2.0.0
+      # (MODEL_VERSION compris), quel que soit le tag publié.
       - name: Push image to Docker Hub
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ steps.metadata.outputs.version }}
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}

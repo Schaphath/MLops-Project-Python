@@ -1,3 +1,7 @@
+# Compose de développement : construit les images depuis le code.
+# Publier :  docker compose build && docker compose push
+# (pour ARM + x86, voir la commande buildx dans le README)
+
 # Limite la taille des logs
 x-logging: &logging
   logging:
@@ -16,7 +20,7 @@ x-hardening: &hardening
 services:
   postgres:
     <<: *logging
-    image: postgres:16-alpine  
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:?DB_NAME must be set}
@@ -24,7 +28,9 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
     volumes:
       - pgdata:/var/lib/postgresql/data # Données conservées même si le conteneur est supprimé
-      - ./Database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro  # Exécuté à la première création de la base 
+      # Exécuté uniquement à la première création du volume.
+      # Base existante -> lancer migration_v2_1.sql à la main.
+      - ./Database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -32,37 +38,37 @@ services:
       retries: 10
       start_period: 10s
     networks:
-      - db-net  
+      - db-net
 
   api:
     <<: [*logging, *hardening]
     build:
       context: .
       dockerfile: ./Api/Dockerfile
-    image: oncoscan-api:${VERSION:-2.0.0}
+      args:
+        VERSION: ${VERSION:-2.0.0}
+    # Format Docker Hub : pseudo/nom:tag
+    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-api:${VERSION:-2.0.0}
     container_name: oncoscan-api
     restart: unless-stopped
     environment:
       API_KEY: ${API_KEY:?API_KEY must be set}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
-      MODEL_PATH: /app/Save_models/adaboost_pipeline.joblib
-      MODEL_VERSION: ${VERSION:-2.0.0}   
-      INFERENCE_LOG_DIR: /app/logs
       LOG_LEVEL: INFO
-    volumes:
-      - ./Save_models:/app/Save_models:ro # Modèle en lecture seule 
-      - inference-logs:/app/logs # Logs d'inférence conservés 
+      # MODEL_PATH et MODEL_VERSION sont fixés dans l'image (modèle inclus)
+    # Healthcheck défini dans Api/Dockerfile
     ports:
-      - "127.0.0.1:8000:8000"  # L'interface passe par le réseau interne : http://api:8000
+      - "127.0.0.1:8000:8000" # Accès local uniquement (debug, /docs)
     networks:
-      - internal-net   # L'API n'a pas besoin de la base de données
+      - internal-net # L'API n'a pas besoin de la base de données
 
   interface:
     <<: [*logging, *hardening]
     build:
       context: .
       dockerfile: ./Interface/Dockerfile
-    image: oncoscan-app:${VERSION:-2.0.0}
+      args:
+        VERSION: ${VERSION:-2.0.0}
+    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-app:${VERSION:-2.0.0}
     container_name: oncoscan-app
     restart: unless-stopped
     environment:
@@ -73,26 +79,27 @@ services:
       DB_NAME: ${DB_NAME:?DB_NAME must be set}
       DB_USER: ${DB_USER:?DB_USER must be set}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
-      APP_VERSION: ${VERSION:-2.0.0}
-      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false} # Fermé par défaut
+    # Healthcheck défini dans Interface/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
       api:
         condition: service_healthy
     ports:
-      - "8501:8501"   # Seul point d'entrée public
+      # Seul point d'entrée public. En HTTP, les mots de passe passent en clair :
+      # en prod, reverse proxy HTTPS devant et "127.0.0.1:8501:8501".
+      - "8501:8501"
     networks:
       - internal-net
       - db-net
 
 volumes:
   pgdata:
-  inference-logs:
 
 networks:
   internal-net:
     driver: bridge # Réseau entre l'interface et l'API
   db-net:
-    driver: bridge # Réseau BD 
+    driver: bridge # Réseau BD
     internal: true # Aucun accès public

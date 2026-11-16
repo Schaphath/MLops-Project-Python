@@ -1,0 +1,87 @@
+# Compose de déploiement : récupère les images depuis Docker Hub, sans le code source.
+# Fichiers nécessaires : ce fichier, Database/schema.sql et un .env
+# Lancer : docker compose -f docker-compose.prod.yml up -d
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-hardening: &hardening
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    <<: *logging
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:?DB_NAME must be set}
+      POSTGRES_USER: ${DB_USER:?DB_USER must be set}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./Database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - db-net
+
+  api:
+    <<: [*logging, *hardening]
+    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-api:${VERSION:-2.0.0}
+    pull_policy: always # toujours prendre la version publiée, jamais une image locale
+    container_name: oncoscan-api
+    restart: unless-stopped
+    environment:
+      API_KEY: ${API_KEY:?API_KEY must be set}
+      LOG_LEVEL: INFO
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - internal-net
+
+  interface:
+    <<: [*logging, *hardening]
+    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-app:${VERSION:-2.0.0}
+    pull_policy: always
+    container_name: oncoscan-app
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000/predict
+      API_KEY: ${API_KEY:?API_KEY must be set}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:?DB_NAME must be set}
+      DB_USER: ${DB_USER:?DB_USER must be set}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    networks:
+      - internal-net
+      - db-net
+
+volumes:
+  pgdata:
+
+networks:
+  internal-net:
+    driver: bridge
+  db-net:
+    driver: bridge
+    internal: true
