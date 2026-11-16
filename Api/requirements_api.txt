@@ -1,6 +1,6 @@
 # Versions exactes pour garantir une construction reproductible et sécurisée.
 # Toute modification de versions doit être validée et testée avant mise en production.
-uvicorn==0.33.0
+uvicorn==0.54.0
 pandas==2.2.3
 scikit-learn==1.8.0
 pytest-json-report==1.5.0
