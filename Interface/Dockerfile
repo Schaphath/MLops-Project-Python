@@ -50,7 +50,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=false
 
 # Bibliothèques système + utilisateur non-root (UID/GID fixes)
+# upgrade : applique les correctifs de sécurité Debian sortis après la création
+# de l'image de base (sinon Trivy bloque la CI sur des failles déjà corrigées)
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
         libstdc++6 \

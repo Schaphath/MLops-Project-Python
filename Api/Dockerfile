@@ -47,7 +47,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MODEL_VERSION=${VERSION}
 
 # Bibliothèques système + utilisateur non-root (UID/GID fixes pour Kubernetes, etc.)
+# upgrade : applique les correctifs de sécurité Debian sortis après la création
+# de l'image de base (sinon Trivy bloque la CI sur des failles déjà corrigées)
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         libgomp1 \
         ca-certificates && \
