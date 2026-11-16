@@ -1,7 +1,9 @@
+
 """Interface web"""
 
 from __future__ import annotations
 
+import html
 import logging
 import math
 import os
@@ -27,6 +29,8 @@ load_dotenv()
 
 # Paramètres globaux de l'application
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
+# Modèle affiché dans le pied de page (modifiable via le .env sans rebuild)
+MODEL_NAME = os.getenv("MODEL_NAME", "Régression logistique calibrée")
 MAX_HISTORY_ROWS = 50
 
 # Protection contre les tentatives de connexion répétées
@@ -40,13 +44,14 @@ MAX_PASSWORD_BYTES = 72
 MAX_PATIENT_ID_LENGTH = 50
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_.-]{3,30}$")
 
-# Libellés affichés pour le diagnostic
-LABEL_MALIGNANT = "Malignant"
-LABEL_BENIGN = "Benign"
+# Libellés affichés pour le diagnostic (l'interface est en français partout)
+LABEL_MALIGNANT = "Maligne"
+LABEL_BENIGN = "Bénigne"
 
 # Noms des variables du modèle
 FEATURES = ["perimeter", "concave_points", "texture", "smoothness", "symmetry"]
 
+# (min, max, défaut, pas) — alignés sur les bornes Pydantic de l'API
 FEATURE_BOUNDS = {
     "perimeter": (40.1, 250.0, 90.0, 1.0),
     "concave_points": (0.0, 0.30, 0.05, 0.001),
@@ -55,26 +60,37 @@ FEATURE_BOUNDS = {
     "symmetry": (0.051, 0.70, 0.18, 0.001),
 }
 
+# Avant : "%.3f" partout, une valeur comme 0.04781 était arrondie à 0.048
+FEATURE_FORMAT = {
+    "perimeter": "%.2f",
+    "concave_points": "%.5f",
+    "texture": "%.2f",
+    "smoothness": "%.5f",
+    "symmetry": "%.4f",
+}
+
+# Les mesures WDBC décrivent les noyaux cellulaires (ponction), pas la tumeur entière
 FEATURE_HELP = {
-    "perimeter": "Périmètre total de la tumeur observée",
-    "concave_points": "Nombre de points concaves présents sur le contour tumoral.",
-    "texture": "Variation du niveau de gris dans la zone tumorale.",
-    "smoothness": "Variation locale de la longueur du contour tumoral.",
-    "symmetry": "Degré d'asymétrie de la forme tumorale.",
+    "perimeter": "Périmètre moyen des noyaux cellulaires observés.",
+    "concave_points": "Nombre de portions concaves sur le contour des noyaux.",
+    "texture": "Écart-type des niveaux de gris dans l'image.",
+    "smoothness": "Variation locale de la longueur des rayons du noyau.",
+    "symmetry": "Symétrie de la forme des noyaux.",
 }
 
 # Chargement du style CSS externe (même dossier que ce fichier)
 CSS_PATH = Path(__file__).resolve().parent / "style.css"
 
+
 def load_css(css_file_path: Path) -> None:
-    """Lit le fichier CSS externe et l'injecte dans l'application Streamlit.
-    L'injection se fait via st.markdown(..., unsafe_allow_html=True)"""
+    """Lit le fichier CSS externe et l'injecte dans l'application Streamlit."""
     try:
         css = css_file_path.read_text(encoding="utf-8")
     except OSError:
         logger.warning("Fichier CSS introuvable ou illisible : %s", css_file_path)
         return
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
 
 # Configuration (variables d'environnement)
 @dataclass(frozen=True)
@@ -89,6 +105,7 @@ class Settings:
     allow_registration: bool
     timezone: str
 
+
 @st.cache_resource
 def get_settings() -> Settings:
     api_key = os.getenv("API_KEY", "")
@@ -97,8 +114,8 @@ def get_settings() -> Settings:
         name
         for name, value in (("API_KEY", api_key), ("DB_PASSWORD", db_password))
         if not value
-        ]
-    
+    ]
+
     if missing:
         raise RuntimeError(f"Variable(s) d'environnement manquante(s) : {', '.join(missing)}")
 
@@ -110,9 +127,11 @@ def get_settings() -> Settings:
         db_name=os.getenv("DB_NAME", "oncoscan"),
         db_user=os.getenv("DB_USER", "oncoscan"),
         db_password=db_password,
-        allow_registration=os.getenv("ALLOW_REGISTRATION", "true").lower() == "true",
+        # Fermé par défaut : sur un outil médical, n'importe qui ne doit pas pouvoir s'inscrire
+        allow_registration=os.getenv("ALLOW_REGISTRATION", "false").lower() == "true",
         timezone=os.getenv("APP_TIMEZONE", "Europe/Paris"),
     )
+
 
 # Base de données PostgreSQL
 @st.cache_resource
@@ -125,8 +144,9 @@ def get_connection_pool(settings: Settings) -> pool.ThreadedConnectionPool:
         dbname=settings.db_name,
         user=settings.db_user,
         password=settings.db_password,
-        connect_timeout=5
+        connect_timeout=5,
     )
+
 
 @contextmanager
 def db_cursor(settings: Settings) -> Iterator[Any]:
@@ -143,9 +163,11 @@ def db_cursor(settings: Settings) -> Iterator[Any]:
     finally:
         connection_pool.putconn(connection, close=bool(connection.closed))
 
+
 # Mots de passe
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
 
 def verify_password(password: str, password_hash: str) -> bool:
     try:
@@ -153,12 +175,15 @@ def verify_password(password: str, password_hash: str) -> bool:
     except (ValueError, TypeError):
         return False
 
+
 @st.cache_resource
 def get_dummy_hash() -> str:
     return hash_password("mot-de-passe-factice-1")
 
+
 def valid_username(username: str) -> bool:
     return bool(USERNAME_PATTERN.fullmatch(username))
+
 
 def valid_password(password: str) -> bool:
     return (
@@ -168,9 +193,11 @@ def valid_password(password: str) -> bool:
         and any(character.isdigit() for character in password)
     )
 
+
 @st.cache_resource
 def get_login_tracker() -> dict[str, Any]:
     return {"lock": threading.Lock(), "entries": {}}
+
 
 def lockout_remaining(username: str) -> int:
     tracker = get_login_tracker()
@@ -179,6 +206,7 @@ def lockout_remaining(username: str) -> int:
         if entry is None:
             return 0
         return max(0, math.ceil(entry["locked_until"] - time.time()))
+
 
 def record_failed_login(username: str) -> None:
     tracker = get_login_tracker()
@@ -210,10 +238,12 @@ def record_failed_login(username: str) -> None:
             for name in stale:
                 del entries[name]
 
+
 def clear_failed_logins(username: str) -> None:
     tracker = get_login_tracker()
     with tracker["lock"]:
         tracker["entries"].pop(username, None)
+
 
 # Session et comptes utilisateurs
 def initialise_session() -> None:
@@ -221,10 +251,11 @@ def initialise_session() -> None:
         "authenticated": False,
         "username": None,
         "user_id": None,
-        "last_prediction": None
-        }
+        "last_prediction": None,
+    }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
+
 
 def login(settings: Settings, username: str, password: str) -> tuple[bool, str]:
     remaining = lockout_remaining(username)
@@ -254,6 +285,7 @@ def login(settings: Settings, username: str, password: str) -> tuple[bool, str]:
     record_failed_login(username)
     return False, "Identifiant ou mot de passe incorrect."
 
+
 def register_user(settings: Settings, username: str, password: str) -> tuple[bool, str]:
     try:
         with db_cursor(settings) as cursor:
@@ -267,6 +299,7 @@ def register_user(settings: Settings, username: str, password: str) -> tuple[boo
     except (psycopg2.Error, RuntimeError):
         logger.exception("Échec de création du compte")
         return False, "Le service de comptes est temporairement indisponible."
+
 
 # Appel de l'API & Historique
 def request_prediction(settings: Settings, inputs: dict[str, float]) -> dict[str, Any]:
@@ -285,20 +318,21 @@ def request_prediction(settings: Settings, inputs: dict[str, float]) -> dict[str
             raise RuntimeError("Le modèle est indisponible.")
         raise RuntimeError(
             f"Le service de prédiction a répondu {response.status_code}."
-            )
+        )
 
     result = response.json()
     if not isinstance(result, dict) or result.get("prediction") not in ("M", "B"):
         raise RuntimeError("Réponse invalide du service de prédiction.")
     return result
 
+
 def save_prediction(
     settings: Settings,
     user_id: int,
     patient_id: str,
     inputs: dict[str, float],
-    result: dict[str, Any]
-    ) -> None:
+    result: dict[str, Any],
+) -> None:
     probability = result.get("probability_malignant")
     probability_value = round(float(probability), 4) if probability is not None else None
     values = [inputs[feature] for feature in FEATURES]
@@ -307,8 +341,9 @@ def save_prediction(
             """
             INSERT INTO predictions (
                 user_id, patient_id, perimeter, concave_points, texture,
-                smoothness, symmetry, prediction, probability_malignant
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                smoothness, symmetry, prediction, probability_malignant,
+                model_version
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 user_id,
@@ -316,14 +351,18 @@ def save_prediction(
                 *values,
                 result["prediction"],
                 probability_value,
+                # Traçabilité : on garde la version qui a produit le résultat
+                str(result.get("model_version") or "inconnue")[:20],
             ),
         )
 
+
 def get_history(settings: Settings, user_id: int) -> pd.DataFrame:
+    # Le patient_id était enregistré mais jamais affiché : l'historique ne servait à rien
     with db_cursor(settings) as cursor:
         cursor.execute(
             """
-            SELECT created_at, prediction, probability_malignant,
+            SELECT created_at, patient_id, prediction, probability_malignant,
                    perimeter, concave_points, texture,
                    smoothness, symmetry
             FROM predictions
@@ -335,46 +374,56 @@ def get_history(settings: Settings, user_id: int) -> pd.DataFrame:
         )
         rows = cursor.fetchall()
     columns = [
-        "Date & Time",
-        "Diagnosis",
-        "Probability (%)",
+        "Date",
+        "Patient",
+        "Diagnostic",
+        "Risque de malignité",
         *[feature.replace("_", " ").title() for feature in FEATURES],
     ]
     return pd.DataFrame(rows, columns=columns)
 
-# Composants d'Affichage
-def render_prediction(result: dict[str, Any]) -> None:
-    prediction = result["prediction"]
-    probability = result.get("probability_malignant")
-    probability_text = (
-        f"{float(probability) * 100:.2f} %" if probability is not None else "non disponible"
-        )
 
-    if prediction == "M":
-        st.error("Résultat du modèle : classe maligne")
-        st.warning(
-            f"Probabilité estimée : {probability_text}. "
-            "Ce résultat doit être confirmé par un professionnel de santé."
-            )
+def format_probability(probability: Any) -> str:
+    """0.0004 -> '< 0,1 %' ; 0.1605 -> '16,1 %'. Plus de précision n'aurait pas de sens médical."""
+    if probability is None or pd.isna(probability):
+        return "-"
+    value = float(probability) * 100
+    if value < 0.1:
+        return "< 0,1 %"
+    return f"{value:.1f} %".replace(".", ",")
+
+
+# Composants d'Affichage
+def render_prediction(prediction_data: dict[str, Any]) -> None:
+    """Résultat en une ligne + une légende (avant : 4 encadrés)."""
+    result = prediction_data["result"]
+    risk = format_probability(result.get("probability_malignant"))
+
+    if result["prediction"] == "M":
+        st.error(f"**Maligne** · risque de malignité estimé : {risk}")
     else:
-        st.success("Résultat du modèle : classe bénigne")
-        st.info(f"Probabilité estimée : {probability_text}.")
-    st.caption(f"Version du modèle : {result.get('model_version', 'inconnue')}")
+        st.success(f"**Bénigne** · risque de malignité estimé : {risk}")
+
+    st.caption(
+        f"Patient {prediction_data['patient_id']} · modèle v{result.get('model_version', '?')} · "
+        "à confirmer par un professionnel de santé."
+    )
+
 
 def render_login_form(settings: Settings) -> None:
     with st.form("login_form"):
         username = st.text_input(
             "Identifiant", placeholder="Votre identifiant", key="login_username"
-            )
+        )
         password = st.text_input(
             "Mot de passe",
             type="password",
             placeholder="Votre mot de passe",
             key="login_password")
-        
+
         submitted = st.form_submit_button(
             "Se connecter", type="primary", use_container_width=False
-            )
+        )
     if submitted:
         if not username.strip() or not password:
             st.warning("Saisissez votre identifiant et votre mot de passe.")
@@ -383,6 +432,7 @@ def render_login_form(settings: Settings) -> None:
             (st.success if success else st.error)(message)
             if success:
                 st.rerun()
+
 
 def render_register_form(settings: Settings) -> None:
     with st.form("register_form"):
@@ -398,7 +448,6 @@ def render_register_form(settings: Settings) -> None:
         confirmation = st.text_input(
             "Confirmez le mot de passe", type="password", key="register_confirmation"
         )
-        # Texte aligné sur USERNAME_PATTERN (3 à 30 caractères)
         st.caption(
             "Identifiant : 3 à 30 caractères (lettres, chiffres, _ . -). "
             "Le mot de passe doit contenir une lettre et un chiffre."
@@ -422,6 +471,7 @@ def render_register_form(settings: Settings) -> None:
             success, message = register_user(settings, username, password)
             (st.success if success else st.error)(message)
 
+
 def render_login(settings: Settings) -> None:
     """Écran de connexion."""
     st.markdown(
@@ -443,6 +493,7 @@ def render_login(settings: Settings) -> None:
             render_register_form(settings)
     else:
         render_login_form(settings)
+
 
 def render_analysis(settings: Settings) -> None:
     """Saisie des mesures et lancement de la prédiction."""
@@ -469,7 +520,7 @@ def render_analysis(settings: Settings) -> None:
                     max_value=maximum,
                     value=default,
                     step=step,
-                    format="%.3f",
+                    format=FEATURE_FORMAT[feature],
                     help=FEATURE_HELP[feature],
                 )
         submitted = st.form_submit_button(
@@ -477,13 +528,19 @@ def render_analysis(settings: Settings) -> None:
         )
 
     if submitted:
+        # Sinon, si la nouvelle analyse échoue, l'ancien résultat (autre patient) reste affiché
+        st.session_state.last_prediction = None
+
         if not patient_id.strip():
             st.warning("Saisissez un identifiant patient pour enregistrer l'analyse.")
         else:
             with st.spinner("Analyse en cours..."):
                 try:
                     result = request_prediction(settings, inputs)
-                    st.session_state.last_prediction = result
+                    st.session_state.last_prediction = {
+                        "patient_id": patient_id.strip(),
+                        "result": result,
+                    }
                     try:
                         save_prediction(
                             settings,
@@ -508,6 +565,7 @@ def render_analysis(settings: Settings) -> None:
     if st.session_state.last_prediction:
         render_prediction(st.session_state.last_prediction)
 
+
 def render_history(settings: Settings) -> None:
     """Affiche l'historique des prédictions."""
     try:
@@ -520,37 +578,43 @@ def render_history(settings: Settings) -> None:
         st.info("Aucune analyse enregistrée pour le moment.")
         return
 
-    history["Diagnosis"] = history["Diagnosis"].map(
+    history["Diagnostic"] = history["Diagnostic"].map(
         {"M": LABEL_MALIGNANT, "B": LABEL_BENIGN}
     )
-    history["Probability (%)"] = pd.to_numeric(history["Probability (%)"], errors="coerce") * 100
-
     col_filter, _ = st.columns([1, 1.8])
     with col_filter:
         choice = st.selectbox(
-            "Filter", ["All", LABEL_MALIGNANT, LABEL_BENIGN], key="history_filter"
+            "Filtrer", ["Tous", LABEL_MALIGNANT, LABEL_BENIGN], key="history_filter"
         )
-    if choice != "All":
-        history = history[history["Diagnosis"] == choice]
+    if choice != "Tous":
+        history = history[history["Diagnostic"] == choice]
 
-    show_details = st.checkbox("Show clinical measurements", key="history_details")
-    visible_columns = ["Date & Time", "Diagnosis", "Probability (%)"]
+    show_details = st.checkbox("Afficher les mesures cliniques", key="history_details")
+    visible_columns = ["Date", "Patient", "Diagnostic", "Risque de malignité"]
     if show_details:
         visible_columns += [
             column for column in history.columns if column not in visible_columns
         ]
 
     visible_history = history[visible_columns].copy()
-    visible_history["Date & Time"] = (
-        pd.to_datetime(visible_history["Date & Time"], utc=True)
+    visible_history["Date"] = (
+        pd.to_datetime(visible_history["Date"], utc=True)
         .dt.tz_convert(settings.timezone)
         .dt.strftime("%d/%m/%Y %H:%M")
     )
-    visible_history["Probability (%)"] = visible_history["Probability (%)"].map(
-        lambda value: f"{value:.2f} %" if pd.notna(value) else "-"
+    visible_history["Risque de malignité"] = visible_history["Risque de malignité"].map(
+        format_probability
     )
+    # Mesures avec le même nombre de décimales que le formulaire (avant : 103.000000)
+    for feature in FEATURES:
+        column = feature.replace("_", " ").title()
+        if column in visible_history.columns:
+            visible_history[column] = visible_history[column].map(
+                lambda value, fmt=FEATURE_FORMAT[feature]: fmt % value
+            )
 
-    table = visible_history.style.set_table_styles(
+    # hide(axis="index") : plus de colonne 0, 1, 2... à gauche du tableau
+    table = visible_history.style.hide(axis="index").set_table_styles(
         [
             {
                 "selector": "th",
@@ -584,6 +648,7 @@ def render_history(settings: Settings) -> None:
         use_container_width=False,
     )
 
+
 def render_dashboard(settings: Settings) -> None:
     """Tableau de bord principal."""
     with st.sidebar:
@@ -609,6 +674,7 @@ def render_dashboard(settings: Settings) -> None:
         render_analysis(settings)
     with history_tab:
         render_history(settings)
+
 
 # Point d'entrée
 def main() -> None:
@@ -638,9 +704,11 @@ def main() -> None:
     st.divider()
     st.markdown(
         f'<div class="app-footer">OncoScan AI v{APP_VERSION} | '
+        f"Modèle : {html.escape(MODEL_NAME)} | "
         "Outil d'aide à la décision médicale | by @Madiba.</div>",
         unsafe_allow_html=True,
     )
+
 
 if __name__ == "__main__":
     main()
