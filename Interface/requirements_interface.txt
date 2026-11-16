@@ -1,7 +1,7 @@
 # Dépendances principales verrouillées pour garantir un build stable et reproductible.
 streamlit==1.67.0
 requests==2.32.3
-pandas==2.2.3
+pandas==3.1.1
 psycopg2-binary==2.9.10
 bcrypt==4.3.0
 
