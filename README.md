@@ -1,7 +1,7 @@
 <div align="center">
   <img src="Interface/favicon.svg" alt="Logo OncoScan" width="88" height="88">
   <h1>OncoScan</h1>
-  <p><strong>Un projet MLOps complet et open source, de la donnée brute au monitoring en production.</strong></p>
+  <p><strong>Introduction MLOps avec des outils open source, de la donnée brute au monitoring en production.</strong></p>
 
   <p>
     <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
