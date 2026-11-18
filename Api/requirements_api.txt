@@ -2,9 +2,9 @@
 # Toute modification de versions doit être validée et testée avant mise en production.
 fastapi==0.163.1
 starlette==1.10.0
-uvicorn==0.33.0
+uvicorn==0.54.0
 prometheus-fastapi-instrumentator==8.1.0
-pandas==2.2.3
+pandas==2.3.3
 scikit-learn==1.8.0  # doit rester la version d'entraînement du modèle (vérifié par les tests)
 joblib==1.6.0        # chargement du modèle .joblib
 python-dotenv==1.2.4  # s'importe sous le nom "dotenv" : from dotenv import load_dotenv
