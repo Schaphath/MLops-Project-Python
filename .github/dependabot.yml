@@ -1,6 +1,5 @@
-# À placer dans : .github/dependabot.yml
-# Dependabot ouvre automatiquement des PR quand une version plus récente existe.
-# Chaque PR passe par la CI (tests + scan + smoke test) avant d'être fusionnée.
+# Dependabot ouvre une PR dès qu'une version plus récente existe.
+# Chaque PR passe par la CI (lint, tests, scan Trivy, smoke test) avant d'être fusionnée.
 version: 2
 updates:
   # Actions GitHub utilisées dans les workflows
@@ -12,12 +11,14 @@ updates:
       actions:            # une seule PR pour toutes les actions
         patterns: ["*"]
 
-  # Dépendances Python (requirements_api.txt et requirements_interface.txt)
-  # Il manquait : c'est là que se trouvent la plupart des failles de sécurité.
+  # Dépendances Python : c'est là que se trouvent la plupart des failles de sécurité
   - package-ecosystem: pip
     directories:
+      - /
       - /Api
       - /Interface
+      - /Model
+      - /Monitoring/evidently
     schedule:
       interval: weekly
     groups:
@@ -25,9 +26,12 @@ updates:
         update-types: [minor, patch]
     ignore:
       # Le modèle est sauvegardé avec scikit-learn 1.8 : changer de version mineure
-      # demande de réentraîner le modèle. On le fait à la main, pas via Dependabot.
+      # oblige à le réentraîner. Ça se fait à la main, pas via Dependabot.
       - dependency-name: scikit-learn
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # Evidently 0.7 ne fonctionne pas avec pandas 3
+      - dependency-name: pandas
+        update-types: ["version-update:semver-major"]
 
   # Images de base des Dockerfile.
   # Ne marche que si le FROM contient la version en clair (pas ${PYTHON_VERSION}).
@@ -35,6 +39,7 @@ updates:
     directories:
       - /Api
       - /Interface
+      - /Monitoring/evidently
     schedule:
       interval: weekly
     ignore:
@@ -42,7 +47,7 @@ updates:
       - dependency-name: python
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
-  # Image postgres du docker-compose (absente avant)
+  # Images des fichiers docker-compose (postgres, prometheus, grafana)
   - package-ecosystem: docker-compose
     directory: /
     schedule:

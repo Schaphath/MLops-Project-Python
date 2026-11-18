@@ -1,0 +1,7 @@
+# Outils de développement : tests et lint (jamais dans les images Docker).
+# Installation complète en local :
+#   pip install -r Api/requirements_api.txt -r Model/requirements_train.txt -r requirements_dev.txt
+pytest==9.1.1
+pytest-json-report==1.5.0
+httpx==0.28.1   # requis par le TestClient de FastAPI
+ruff==0.17.5

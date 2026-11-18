@@ -30,7 +30,7 @@ RUN pip install -r requirements_interface.txt
 #-----------------#
 FROM python:3.12.12-slim-bookworm AS runtime
 
-ARG VERSION=2.0.0
+ARG VERSION=dev
 
 LABEL org.opencontainers.image.title="oncoscan-app" \
       org.opencontainers.image.description="Interface web Streamlit OncoScan" \

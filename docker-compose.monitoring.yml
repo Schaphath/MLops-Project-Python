@@ -1,0 +1,121 @@
+# Stack de monitoring OncoScan : Prometheus + Grafana + Evidently.
+# Se superpose au compose principal sans le modifier :
+#   dev  : docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d --build
+#   prod : docker compose -f docker-compose.prod.yml -f docker-compose.monitoring.yml up -d --build
+#
+# Accès (local uniquement) :
+#   Grafana    http://localhost:3000   (GRAFANA_ADMIN_USER / GRAFANA_ADMIN_PASSWORD du .env,
+#                                       pas un compte de l'application OncoScan)
+#   Prometheus http://localhost:9090
+#   Evidently  http://localhost:8085   (rapports HTML de drift)
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-hardening: &hardening
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+# Lecture seule conseillée : voir Monitoring/sql/readonly_user.sql
+# (par défaut, l'utilisateur principal de la base est réutilisé)
+x-monitoring-db: &monitoring-db
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_NAME: ${DB_NAME:?DB_NAME must be set}
+  MONITORING_DB_USER: ${MONITORING_DB_USER:-${DB_USER}}
+  MONITORING_DB_PASSWORD: ${MONITORING_DB_PASSWORD:-${DB_PASSWORD}}
+
+services:
+  prometheus:
+    <<: [*logging, *hardening]
+    image: prom/prometheus:v3.16.0
+    container_name: oncoscan-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+    volumes:
+      - ./Monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./Monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - internal-net   # pour lire api:8000/metrics
+      - monitoring-net
+    depends_on:
+      - api
+
+  evidently:
+    <<: [*logging, *hardening]
+    # En dev l'image est construite sur place ; en prod elle est publiée sur Docker Hub par la CI
+    build:
+      context: ./Monitoring/evidently
+    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-evidently:${VERSION:?VERSION must be set}
+    container_name: oncoscan-evidently
+    restart: unless-stopped
+    environment:
+      <<: *monitoring-db
+      DB_USER: ${MONITORING_DB_USER:-${DB_USER}}
+      DB_PASSWORD: ${MONITORING_DB_PASSWORD:-${DB_PASSWORD}}
+      WINDOW_DAYS: ${EVIDENTLY_WINDOW_DAYS:-30}
+      INTERVAL_SECONDS: ${EVIDENTLY_INTERVAL_SECONDS:-3600}
+      MIN_ROWS: ${EVIDENTLY_MIN_ROWS:-30}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # Données d'entraînement = référence pour le drift
+      - ./Data/process/cancer_select.csv:/app/reference/cancer_select.csv:ro
+      - evidently-reports:/app/reports
+    ports:
+      - "127.0.0.1:8085:8085"
+    networks:
+      - db-net         # lecture de la table predictions
+      - monitoring-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  grafana:
+    <<: [*logging, *hardening]
+    image: grafana/grafana:13.3.1
+    container_name: oncoscan-grafana
+    restart: unless-stopped
+    environment:
+      <<: *monitoring-db
+      # Ce compte n'est créé qu'au tout premier démarrage (volume grafana-data vide).
+      # Changer ces valeurs ensuite n'a aucun effet : voir « Grafana » dans Monitoring/README.md.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/oncoscan-modele.json
+    volumes:
+      - ./Monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./Monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - db-net         # source PostgreSQL
+      - monitoring-net
+    depends_on:
+      - prometheus
+      - evidently
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  evidently-reports:
+
+networks:
+  monitoring-net:
+    driver: bridge

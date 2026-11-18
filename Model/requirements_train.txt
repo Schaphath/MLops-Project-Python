@@ -1,0 +1,9 @@
+# Dépendances de l'entraînement (Model/train.py), en local uniquement.
+# scikit-learn doit rester identique à celui de l'API : le modèle sauvegardé en dépend.
+scikit-learn==1.8.0
+xgboost==3.4.1
+pandas==2.2.3
+numpy==2.4.0
+joblib==1.6.0
+matplotlib==3.10.8
+mlflow==3.18.0

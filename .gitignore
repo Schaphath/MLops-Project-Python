@@ -1,4 +1,44 @@
+# ---------------------------------------------------------------
+# Secrets : seul .env.example est versionné
+# ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------
 .venv/
-Tests/__pycache__/
-Api/__pycache__/
-.dockerignore
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------
+# Fichiers générés (tests, entraînement, suivi MLflow)
+# ---------------------------------------------------------------
+Tests_results/
+.report.json
+mlruns/
+mlartifacts/
+mlflow.db
+Api/logs/
+
+# ---------------------------------------------------------------
+# Notes et documents personnels (gardés en local, hors dépôt)
+# ---------------------------------------------------------------
+Ressources_docker/
+commandes_git.txt
+recup_donnees.txt
+Data/evaluate/juste_pour_tester.csv
+
+# ---------------------------------------------------------------
+# Éditeurs et systèmes
+# ---------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -33,7 +33,7 @@ RUN pip install -r requirements_api.txt
 FROM python:3.12.12-slim-bookworm AS runtime
 
 # Version passée au build (docker compose build ou --build-arg VERSION=...)
-ARG VERSION=2.0.0
+ARG VERSION=dev
 
 LABEL org.opencontainers.image.title="oncoscan-api" \
       org.opencontainers.image.description="API FastAPI OncoScan (modèle inclus)" \
@@ -63,11 +63,12 @@ COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app/api
 
-# Code de l'API (le .dockerignore filtre les fichiers inutiles/sensibles)
+# Code de l'API (le .dockerignore de la racine écarte les fichiers inutiles ou sensibles)
 COPY Api/ /app/api/
 
-# Le modèle fait partie de l'image : un tag d'image = un modèle précis
-COPY Save_models/oncoscan_pipeline.joblib /app/Save_models/oncoscan_pipeline.joblib
+# Le modèle fait partie de l'image : un tag d'image = un modèle précis.
+# Sa fiche JSON l'accompagne (servie sur /model).
+COPY Save_models/oncoscan_pipeline.joblib Save_models/oncoscan_pipeline.json /app/Save_models/
 
 # Plus aucun droit root à partir d'ici
 USER 10001:10001

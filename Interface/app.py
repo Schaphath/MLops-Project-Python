@@ -1,4 +1,9 @@
-"""Interface web"""
+"""Interface web OncoScan (Streamlit).
+
+Connexion des praticiens, saisie des mesures, appel de l'API de prédiction,
+historique et validation des diagnostics. Les comptes et l'historique sont
+stockés dans PostgreSQL.
+"""
 
 from __future__ import annotations
 
@@ -9,31 +14,30 @@ import os
 import re
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import bcrypt
 import pandas as pd
 import psycopg2
 import requests
 import streamlit as st
-from psycopg2 import pool
 from dotenv import load_dotenv  # paquet PyPI : python-dotenv (et non "dotenv")
+from psycopg2 import pool
 
 logger = logging.getLogger(__name__)
 
-# Chargement du .env à la racine du projet (Interface/../.env).
-# - En local : lit les variables du .env (voir .env.example).
-# - Dans Docker : le fichier n'existe pas dans l'image, rien n'est chargé ;
-#   les variables viennent du docker-compose.
-# override=False : une variable déjà définie dans l'environnement n'est jamais écrasée.
+# En local, on lit le .env à la racine du projet. Dans Docker il n'existe pas
+# (exclu par .dockerignore) et les variables viennent du docker-compose.
+# override=False : une variable déjà définie n'est jamais écrasée.
 load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
-# Paramètres globaux de l'application
-APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
-# Modèle affiché dans le pied de page (modifiable via le .env sans rebuild)
+# Paramètres globaux
+APP_VERSION = os.getenv("APP_VERSION", "dev")
+# Nom affiché dans le pied de page, réglable depuis le .env sans reconstruire l'image
 MODEL_NAME = os.getenv("MODEL_NAME", "Régression logistique calibrée")
 MAX_HISTORY_ROWS = 50
 
@@ -48,14 +52,14 @@ MAX_PASSWORD_BYTES = 72
 MAX_PATIENT_ID_LENGTH = 50
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_.-]{3,30}$")
 
-# Libellés affichés pour le diagnostic (l'interface est en français partout)
 LABEL_MALIGNANT = "Maligne"
 LABEL_BENIGN = "Bénigne"
+LABEL_PENDING = "En attente"
 
 # Noms des variables du modèle
 FEATURES = ["perimeter", "concave_points", "texture", "smoothness", "symmetry"]
 
-# (min, max, défaut, pas) — alignés sur les bornes Pydantic de l'API
+# (min, max, défaut, pas). Mêmes bornes que l'API (Pydantic) et que la base (CHECK).
 FEATURE_BOUNDS = {
     "perimeter": (40.1, 250.0, 90.0, 1.0),
     "concave_points": (0.0, 0.30, 0.05, 0.001),
@@ -64,7 +68,7 @@ FEATURE_BOUNDS = {
     "symmetry": (0.051, 0.70, 0.18, 0.001),
 }
 
-# Avant : "%.3f" partout, une valeur comme 0.04781 était arrondie à 0.048
+# Assez de décimales pour ne pas arrondir les mesures (0.04781 doit rester 0.04781)
 FEATURE_FORMAT = {
     "perimeter": "%.2f",
     "concave_points": "%.5f",
@@ -73,16 +77,17 @@ FEATURE_FORMAT = {
     "symmetry": "%.4f",
 }
 
-# Les mesures WDBC décrivent les noyaux cellulaires (ponction), pas la tumeur entière
+# Les mesures décrivent les noyaux cellulaires vus sur une ponction, pas la tumeur entière.
+# Le modèle utilise les valeurs « worst » du jeu WDBC : la moyenne des 3 noyaux
+# les plus atypiques de l'image.
 FEATURE_HELP = {
-    "perimeter": "Périmètre moyen des noyaux cellulaires observés.",
-    "concave_points": "Nombre de portions concaves sur le contour des noyaux.",
-    "texture": "Écart-type des niveaux de gris dans l'image.",
-    "smoothness": "Variation locale de la longueur des rayons du noyau.",
-    "symmetry": "Symétrie de la forme des noyaux.",
+    "perimeter": "Périmètre des noyaux cellulaires (moyenne des 3 plus grandes valeurs).",
+    "concave_points": "Part du contour des noyaux présentant des creux (3 plus grandes valeurs).",
+    "texture": "Écart-type des niveaux de gris dans les noyaux (3 plus grandes valeurs).",
+    "smoothness": "Variation locale du rayon des noyaux (3 plus grandes valeurs).",
+    "symmetry": "Symétrie de la forme des noyaux (3 plus grandes valeurs).",
 }
 
-# Chargement du style CSS externe (même dossier que ce fichier)
 CSS_PATH = Path(__file__).resolve().parent / "style.css"
 
 
@@ -131,7 +136,7 @@ def get_settings() -> Settings:
         db_name=os.getenv("DB_NAME", "oncoscan"),
         db_user=os.getenv("DB_USER", "oncoscan"),
         db_password=db_password,
-        # Fermé par défaut : sur un outil médical, n'importe qui ne doit pas pouvoir s'inscrire
+        # Fermé par défaut : sur un outil médical, on ne laisse pas n'importe qui s'inscrire
         allow_registration=os.getenv("ALLOW_REGISTRATION", "false").lower() == "true",
         timezone=os.getenv("APP_TIMEZONE", "Europe/Paris"),
     )
@@ -182,6 +187,8 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 @st.cache_resource
 def get_dummy_hash() -> str:
+    # Hash vérifié quand l'identifiant n'existe pas : la réponse prend le même temps
+    # dans les deux cas, on ne peut donc pas deviner quels comptes existent.
     return hash_password("mot-de-passe-factice-1")
 
 
@@ -191,13 +198,15 @@ def valid_username(username: str) -> bool:
 
 def valid_password(password: str) -> bool:
     return (
-        MIN_PASSWORD_LENGTH <= len(password)
+        len(password) >= MIN_PASSWORD_LENGTH
         and len(password.encode("utf-8")) <= MAX_PASSWORD_BYTES
         and any(character.isalpha() for character in password)
         and any(character.isdigit() for character in password)
     )
 
 
+# Anti force brute : après 5 échecs, l'identifiant est bloqué une minute.
+# Le compteur est en mémoire, partagé entre les sessions du même conteneur.
 @st.cache_resource
 def get_login_tracker() -> dict[str, Any]:
     return {"lock": threading.Lock(), "entries": {}}
@@ -355,19 +364,18 @@ def save_prediction(
                 *values,
                 result["prediction"],
                 probability_value,
-                # Traçabilité : on garde la version qui a produit le résultat
+                # On garde la version du modèle qui a produit le résultat
                 str(result.get("model_version") or "inconnue")[:20],
             ),
         )
 
 
 def get_history(settings: Settings, user_id: int) -> pd.DataFrame:
-    # Le patient_id était enregistré mais jamais affiché : l'historique ne servait à rien
     with db_cursor(settings) as cursor:
         cursor.execute(
             """
-            SELECT created_at, patient_id, prediction, probability_malignant,
-                   perimeter, concave_points, texture,
+            SELECT id, created_at, patient_id, prediction, probability_malignant,
+                   doctor_feedback, perimeter, concave_points, texture,
                    smoothness, symmetry
             FROM predictions
             WHERE user_id = %s
@@ -377,14 +385,36 @@ def get_history(settings: Settings, user_id: int) -> pd.DataFrame:
             (user_id, MAX_HISTORY_ROWS),
         )
         rows = cursor.fetchall()
+        
     columns = [
+        "id",
         "Date",
         "Patient",
         "Diagnostic",
         "Risque de malignité",
+        "Validation",
         *[feature.replace("_", " ").title() for feature in FEATURES],
     ]
     return pd.DataFrame(rows, columns=columns)
+
+
+def save_feedback(settings: Settings, user_id: int, prediction_id: int, diagnosis: str) -> bool:
+    """Enregistre le diagnostic confirmé par le praticien (M ou B).
+
+    C'est ce retour terrain qui permet au monitoring de mesurer la vraie
+    performance du modèle en production. Un praticien ne peut valider que ses
+    propres analyses, et peut corriger une validation déjà faite.
+    """
+    with db_cursor(settings) as cursor:
+        cursor.execute(
+            """
+            UPDATE predictions
+            SET doctor_feedback = %s, feedback_by = %s, feedback_at = now()
+            WHERE id = %s AND user_id = %s
+            """,
+            (diagnosis, user_id, prediction_id, user_id),
+        )
+        return cursor.rowcount == 1
 
 
 def format_probability(probability: Any) -> str:
@@ -399,7 +429,7 @@ def format_probability(probability: Any) -> str:
 
 # Composants d'Affichage
 def render_prediction(prediction_data: dict[str, Any]) -> None:
-    """Résultat en une ligne + une légende (avant : 4 encadrés)."""
+    """Résultat en une ligne, avec une légende en dessous."""
     result = prediction_data["result"]
     risk = format_probability(result.get("probability_malignant"))
 
@@ -582,9 +612,9 @@ def render_history(settings: Settings) -> None:
         st.info("Aucune analyse enregistrée pour le moment.")
         return
 
-    history["Diagnostic"] = history["Diagnostic"].map(
-        {"M": LABEL_MALIGNANT, "B": LABEL_BENIGN}
-    )
+    labels = {"M": LABEL_MALIGNANT, "B": LABEL_BENIGN}
+    history["Diagnostic"] = history["Diagnostic"].str.strip().map(labels)
+    history["Validation"] = history["Validation"].map(labels).fillna(LABEL_PENDING)
     col_filter, _ = st.columns([1, 1.8])
     with col_filter:
         choice = st.selectbox(
@@ -594,10 +624,10 @@ def render_history(settings: Settings) -> None:
         history = history[history["Diagnostic"] == choice]
 
     show_details = st.checkbox("Afficher les mesures cliniques", key="history_details")
-    visible_columns = ["Date", "Patient", "Diagnostic", "Risque de malignité"]
+    visible_columns = ["Date", "Patient", "Diagnostic", "Risque de malignité", "Validation"]
     if show_details:
         visible_columns += [
-            column for column in history.columns if column not in visible_columns
+            column for column in history.columns if column not in [*visible_columns, "id"]
         ]
 
     visible_history = history[visible_columns].copy()
@@ -609,7 +639,7 @@ def render_history(settings: Settings) -> None:
     visible_history["Risque de malignité"] = visible_history["Risque de malignité"].map(
         format_probability
     )
-    # Mesures avec le même nombre de décimales que le formulaire (avant : 103.000000)
+    # Mêmes décimales que dans le formulaire de saisie
     for feature in FEATURES:
         column = feature.replace("_", " ").title()
         if column in visible_history.columns:
@@ -617,7 +647,7 @@ def render_history(settings: Settings) -> None:
                 lambda value, fmt=FEATURE_FORMAT[feature]: fmt % value
             )
 
-    # hide(axis="index") : plus de colonne 0, 1, 2... à gauche du tableau
+    # hide(axis="index") retire la colonne 0, 1, 2... que pandas ajoute à gauche
     table = visible_history.style.hide(axis="index").set_table_styles(
         [
             {
@@ -651,6 +681,50 @@ def render_history(settings: Settings) -> None:
         mime="text/csv",
         use_container_width=False,
     )
+
+    render_feedback_form(settings, history)
+
+
+def render_feedback_form(settings: Settings, history: pd.DataFrame) -> None:
+    """Le praticien indique le diagnostic confirmé d'une analyse."""
+    st.markdown("#### Valider un diagnostic")
+    st.caption(
+        "Une fois le résultat d'anatomopathologie connu, indiquez le diagnostic réel. "
+        "Ces validations servent à suivre la performance du modèle en conditions réelles."
+    )
+
+    # Les analyses en attente en premier : ce sont celles qu'on cherche le plus souvent
+    pending_first = history.assign(_done=history["Validation"] != LABEL_PENDING).sort_values(
+        ["_done", "Date"], ascending=[True, False]
+    )
+    options = {
+        int(row.id): (
+            f"{pd.Timestamp(row.Date).tz_convert(settings.timezone):%d/%m/%Y %H:%M} · "
+            f"{row.Patient} · modèle : {row.Diagnostic} · validation : {row.Validation}"
+        )
+        for row in pending_first.itertuples()
+    }
+
+    with st.form("feedback_form"):
+        prediction_id = st.selectbox("Analyse", options=list(options), format_func=options.get)
+        confirmed = st.radio("Diagnostic confirmé", [LABEL_MALIGNANT, LABEL_BENIGN], horizontal=True)
+        submitted = st.form_submit_button("Enregistrer la validation")
+
+    if not submitted:
+        return
+
+    diagnosis = "M" if confirmed == LABEL_MALIGNANT else "B"
+    try:
+        saved = save_feedback(settings, st.session_state.user_id, prediction_id, diagnosis)
+    except (psycopg2.Error, RuntimeError):
+        logger.exception("Échec d'enregistrement de la validation")
+        st.error("La validation n'a pas pu être enregistrée.")
+        return
+    if saved:
+        st.success("Validation enregistrée.")
+        st.rerun()
+    else:
+        st.error("Analyse introuvable.")
 
 
 def render_dashboard(settings: Settings) -> None:

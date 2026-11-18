@@ -1,655 +1,438 @@
 <div align="center">
-  <img src="Interface/favicon.svg" alt="Logo OncoScan AI" width="96" height="96">
-  <h1>OncoScan AI</h1>
-  <p><strong>Projet MLOps de classification de tumeurs mammaires</strong></p>
+  <img src="Interface/favicon.svg" alt="Logo OncoScan" width="88" height="88">
+  <h1>OncoScan</h1>
+  <p><strong>Un projet MLOps complet et open source, de la donnée brute au monitoring en production.</strong></p>
 
   <p>
     <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
-    <img src="https://img.shields.io/badge/FastAPI-REST-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+    <img src="https://img.shields.io/badge/scikit--learn-1.8-F7931E?logo=scikitlearn&logoColor=white" alt="scikit-learn">
+    <img src="https://img.shields.io/badge/MLflow-3.18-0194E2?logo=mlflow&logoColor=white" alt="MLflow">
+    <img src="https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white" alt="FastAPI">
     <img src="https://img.shields.io/badge/Streamlit-UI-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit">
-    <img src="https://img.shields.io/badge/scikit-learn-ML-F7931E?logo=scikit-learn&logoColor=white" alt="scikit-learn">
+    <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
+    <br>
     <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker">
-    <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 16">
     <img src="https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions">
-    <img src="https://img.shields.io/badge/License-MIT-6f42c1" alt="Licence MIT">
+    <img src="https://img.shields.io/badge/Prometheus-metrics-E6522C?logo=prometheus&logoColor=white" alt="Prometheus">
+    <img src="https://img.shields.io/badge/Grafana-dashboards-F46800?logo=grafana&logoColor=white" alt="Grafana">
+    <img src="https://img.shields.io/badge/Evidently-drift-6f42c1" alt="Evidently">
+    <img src="https://img.shields.io/badge/Licence-MIT-lightgrey" alt="Licence MIT">
   </p>
 </div>
 
-> Avertissement : ce projet est un prototype pédagogique et ne remplace pas un avis médical professionnel. Il est conçu pour démontrer un workflow MLOps complet, pas pour servir de diagnostic clinique.
+> [!IMPORTANT]
+> OncoScan est un **projet de démonstration**. Le modèle est entraîné sur un petit jeu de données public
+> (569 patients) et n'a aucune valeur clinique : il ne doit jamais servir à une décision médicale.
+> L'objet du projet est la **démarche MLOps**, pas la performance du modèle.
+
+## En bref
+
+OncoScan classe une tumeur mammaire comme bénigne ou maligne à partir de 5 mesures de noyaux cellulaires.
+Le cas d'usage sert de prétexte pour montrer, avec uniquement des outils open source, ce qu'il faut autour
+d'un modèle pour qu'il soit **fiable, traçable, déployable et surveillé** :
+
+| Étape | Ce qui est fait | Outils |
+|---|---|---|
+| Expérimentation | Comparaison de 6 algorithmes en validation croisée, calibration des probabilités, seuil de décision choisi pour le recall | scikit-learn, XGBoost |
+| Traçabilité | Chaque entraînement est enregistré (paramètres, métriques, figures, empreinte des données, commit git) et le modèle est versionné dans un registre | MLflow |
+| Qualité | 35 tests automatisés (modèle + API), lint et règles de sécurité | pytest, ruff |
+| Service | API d'inférence authentifiée, interface web pour les praticiens, historique en base | FastAPI, Streamlit, PostgreSQL |
+| Livraison | Images Docker durcies, scan de vulnérabilités, test de démarrage, publication multi-architecture | Docker, Trivy, GitHub Actions, Docker Hub |
+| Production | Métriques techniques, drift des données, performance réelle mesurée grâce aux validations des médecins, alertes | Prometheus, Grafana, Evidently |
 
 ## Sommaire
 
-- [1. Vue d'ensemble](#1-vue-densemble)
-- [2. Architecture actuelle](#2-architecture-actuelle)
-- [3. Modèle et données](#3-modèle-et-données)
-- [4. Déploiement local avec Docker](#4-déploiement-local-avec-docker)
-- [5. Utilisation de l'application](#5-utilisation-de-lapplication)
-- [6. Variables d'environnement](#6-variables-denvironnement)
-- [7. Structure du dépôt](#7-structure-du-dépôt)
-- [8. Tests et validation](#8-tests-et-validation)
+- [En bref](#en-bref)
+- [Sommaire](#sommaire)
+- [1. Architecture](#1-architecture)
+- [2. Démarrage rapide](#2-démarrage-rapide)
+- [3. Données et modèle](#3-données-et-modèle)
+  - [Les données](#les-données)
+  - [La démarche d'entraînement](#la-démarche-dentraînement)
+  - [Résultats (jeu de test, 112 patients)](#résultats-jeu-de-test-112-patients)
+  - [La fiche du modèle](#la-fiche-du-modèle)
+- [4. Suivi des expériences avec MLflow](#4-suivi-des-expériences-avec-mlflow)
+- [5. API d'inférence](#5-api-dinférence)
+- [6. Interface web](#6-interface-web)
+- [7. Monitoring](#7-monitoring)
+- [8. Tests et qualité](#8-tests-et-qualité)
 - [9. CI/CD](#9-cicd)
-- [10. Dépannage](#10-dépannage)
-- [11. Licence](#11-licence)
+- [10. Sécurité](#10-sécurité)
+  - [Rotation des secrets](#rotation-des-secrets)
+- [11. Configuration](#11-configuration)
+- [12. Structure du dépôt](#12-structure-du-dépôt)
+- [13. Dépannage](#13-dépannage)
+- [14. Limites et pistes d'amélioration](#14-limites-et-pistes-damélioration)
+- [15. Auteur et licence](#15-auteur-et-licence)
 
-## 1. Vue d'ensemble
-
-OncoScan AI est une application de démonstration MLOps pour classifier des tumeurs mammaires à partir de variables morphologiques. Le modèle est entraîné sur un jeu de données de référence et encapsulé dans un pipeline scikit-learn sauvegardé au format `joblib`.
-
-Le projet actuel contient :
-
-- une interface web Streamlit pour la saisie et l'historique,
-- une API FastAPI pour l'inférence,
-- une base PostgreSQL pour les comptes et les prédictions,
-- un script de training `Model/train.py`,
-- des tests de validation de performance du modèle,
-- une pipeline CI/CD GitHub Actions pour build, test et scan de conteneurs.
-
-## 2. Architecture actuelle
-
-Le dépôt est structuré autour de trois services principaux orchestrés par Docker Compose :
+## 1. Architecture
 
 ```mermaid
 flowchart LR
-    U[Utilisateur / praticien] --> I[Interface Streamlit :8501]
-    I -->|POST /predict| A[API FastAPI :8000]
-    A --> M[Save_models/adaboost_pipeline.joblib]
-    I -->|SQL| P[(PostgreSQL 16)]
-    G[GitHub Actions] -->|build + tests + scan| D[Docker images]
+    subgraph Entraînement["Entraînement (local)"]
+        D[(Data/process<br>cancer_select.csv)] --> T[Model/train.py]
+        T --> R[(MLflow<br>runs + registre)]
+        T --> J[Save_models/<br>oncoscan_pipeline.joblib + .json]
+    end
+
+    subgraph CI["GitHub Actions"]
+        J --> C[lint + tests<br>build + Trivy + smoke test]
+        C --> H[(Docker Hub)]
+    end
+
+    subgraph Prod["docker compose"]
+        U((Praticien)) --> I[Interface Streamlit<br>:8501]
+        I -->|POST /predict<br>X-API-Key| A[API FastAPI<br>:8000]
+        I -->|comptes, historique,<br>validations| P[(PostgreSQL 16)]
+        A -->|/metrics| PR[Prometheus<br>:9090]
+        P -->|lecture seule| E[Evidently<br>:8085]
+        E -->|/metrics| PR
+        PR --> G[Grafana<br>:3000]
+        P -->|lecture seule| G
+    end
+
+    H -.->|docker pull| Prod
 ```
 
-### Services
+| Service | Rôle | Accès depuis l'hôte |
+|---|---|---|
+| `interface` | Application Streamlit : connexion, analyses, historique, validation des diagnostics | http://localhost:8501 |
+| `api` | Inférence FastAPI, modèle embarqué dans l'image | http://127.0.0.1:8000/docs |
+| `postgres` | Comptes praticiens, prédictions, validations | aucun (réseau Docker interne) |
+| `prometheus` | Collecte des métriques et règles d'alerte | http://127.0.0.1:9090 |
+| `grafana` | Dashboards technique et modèle | http://127.0.0.1:3000 |
+| `evidently` | Calcul du drift et de la performance réelle, rapports HTML | http://127.0.0.1:8085 |
 
-- `Interface/` : application Streamlit avec authentification, validation des valeurs, appel à l'API et historique en base.
-- `Api/` : API FastAPI exposant `/health` et `/predict` avec validation Pydantic et clé API.
-- `Database/` : script SQL initialisant le schéma PostgreSQL.
-- `Save_models/` : artefacts ML sérialisés utilisés au runtime.
+La base n'est joignable que par l'interface et les outils de monitoring (réseau `db-net`, sans accès
+extérieur). L'API ne voit pas la base : elle n'en a pas besoin.
 
-### Ports et connexions
+## 2. Démarrage rapide
 
-- `http://localhost:8501` : interface publique
-- `http://api:8000/predict` : endpoint interne de l'API depuis le réseau Docker
-- `postgres:5432` : base de données interne, inaccessible directement depuis l'hôte
-
-## 3. Modèle et données
-
-### Modèle ML
-
-Le projet utilise un pipeline de type `Pipeline([('scaler', MinMaxScaler()), ('model', model)])` avec des modèles comparés dans `Model/train.py`.
-
-Le meilleur modèle actuellement sauvegardé est :
-
-- `Save_models/adaboost_pipeline.joblib`
-
-Le pipeline est chargé par FastAPI au démarrage et est validé via les tests.
-
-### Variables du modèle
-
-Le modèle attendu par l'API et l'interface prend 5 variables :
-
-- `perimeter`
-- `concave_points`
-- `texture`
-- `smoothness`
-- `symmetry`
-
-Les bornes de validation utilisées par l'API sont :
-
-| Champ | Bornes |
-|---|---|
-| `perimeter` | `40.0 < x <= 250.0` |
-| `concave_points` | `0.0 <= x <= 0.3` |
-| `texture` | `5.0 < x <= 50.0` |
-| `smoothness` | `0.01 < x <= 0.3` |
-| `symmetry` | `0.05 < x <= 0.7` |
-
-### Données
-
-Les jeux de données et évaluations sont présents dans :
-
-- `Data/raw/`
-- `Data/process/`
-- `Data/evaluate/`
-
-Le dataset de validation utilisé par les tests est :
-
-- `Data/process/cancer_select.csv`
-
-Les résultats d'évaluation sont stockés dans :
-
-- `Evaluate_results/metrics.json`
-- `Evaluate_results/confusion_matrix.png`
-
-### API REST
-
-L'API expose les endpoints suivants :
-
-#### `GET /`
-
-Retourne le nom, la version et le statut de l'application.
-
-#### `GET /health`
-
-Retourne l'état du pipeline chargé :
-
-```json
-{
-  "status": "healthy",
-  "pipeline_loaded": true,
-  "model_version": "2.0.0"
-}
-```
-
-#### `POST /predict`
-
-Exemple de payload :
-
-```json
-{
-  "perimeter": 87.46,
-  "concave_points": 0.04781,
-  "texture": 17.77,
-  "smoothness": 0.08474,
-  "symmetry": 0.1812
-}
-```
-
-Exemple de réponse :
-
-```json
-{
-  "prediction": "M",
-  "label": "Maligne",
-  "probability_malignant": 0.923,
-  "model_version": "2.0.0"
-}
-```
-
-La clé API est attendue dans le header HTTP :
-
-```http
-X-API-Key: votre-cle-api
-```
-
-## 4. Déploiement local avec Docker
-
-### 4.1 Prérequis
-
-- Docker Desktop ou Docker Engine
-- Docker Compose v2
-- Git
-- Python 3.12 (recommandé pour les vérifications locales)
-
-### 4.2 Cloner le dépôt
+**Prérequis** : Docker avec Compose v2, Git. Python 3.12 seulement pour entraîner le modèle ou lancer les tests.
 
 ```bash
-git clone https://github.com/<votre-utilisateur>/<votre-repository>.git
+git clone https://github.com/Schaphath/MLops-Project-Tuto-Python.git
 cd MLops-Project-Tuto-Python
-```
-
-### 4.3 Préparer les variables d'environnement
-
-Créez votre fichier `.env` à partir de l'exemple :
-
-```bash
 cp .env.example .env
 ```
 
-Sur PowerShell :
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Exemple de contenu attendu :
-
-```dotenv
-DB_NAME=oncoscan
-DB_USER=oncoscan
-DB_PASSWORD=replace-with-a-long-random-password
-API_KEY=replace-with-a-long-random-api-key
-ALLOWED_ORIGINS=
-VERSION=2.0.0
-```
-
-### 4.4 Démarrer les services
+Remplacer chaque `change-me` du `.env` par une vraie valeur. Pour générer un secret :
 
 ```bash
-docker compose config --quiet
-docker compose up --build -d
+python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Vérifier l'état :
+Lancer l'application seule :
 
 ```bash
-docker compose ps
-docker compose logs -f
+docker compose up -d --build
 ```
 
-L'application est ensuite accessible sur :
-
-- Interface : http://localhost:8501
-- API : http://localhost:8000/docs
-
-### 4.5 Arrêt et nettoyage
+Ou l'application avec toute la stack de monitoring :
 
 ```bash
-docker compose down
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d --build
 ```
 
-Pour supprimer aussi la base de données locale :
+Ouvrir http://localhost:8501. Pour créer le premier compte, mettre `ALLOW_REGISTRATION=true` dans le `.env`,
+relancer, créer les comptes, puis revenir à `false`.
 
-```bash
-docker compose down -v
-```
+Pour déployer sans le code source, à partir des images publiées sur Docker Hub, utiliser
+`docker-compose.prod.yml` à la place de `docker-compose.yml`.
 
-## 5. Utilisation de l'application
+## 3. Données et modèle
 
-### 5.1 Authentification
+### Les données
 
-L'interface Streamlit permet :
+Jeu [Breast Cancer Wisconsin (Diagnostic)](https://archive.ics.uci.edu/dataset/17/breast+cancer+wisconsin+diagnostic) :
+569 ponctions à l'aiguille fine, 30 mesures par image. Après nettoyage (voir `Notebook/Analyse-Exploratoire.ipynb`),
+il reste 557 lignes, dont 36 % de tumeurs malignes.
 
-- la création d'un compte,
-- la connexion à un compte existant,
-- la vérification du mot de passe via `bcrypt`,
-- la limitation des tentatives de connexion afin de limiter les attaques de force brute.
+| Fichier | Contenu |
+|---|---|
+| `Data/raw/cancer.csv` | Données brutes |
+| `Data/process/cancer_clean.csv` | Après nettoyage, valeurs « worst » uniquement |
+| `Data/process/cancer_select.csv` | Les 5 variables retenues + le diagnostic : **c'est le fichier d'entraînement** |
 
-### 5.2 Saisie des données
+Le modèle utilise 5 variables, toutes en version « worst » (moyenne des 3 noyaux les plus atypiques de l'image) :
 
-L'utilisateur renseigne les 5 variables nécessaires à la prédiction :
-
-- périmètre,
-- points concaves,
-- texture,
-- lissitude,
-- symétrie.
-
-Le formulaire valide les bornes directement côté interface avant l'appel à l'API.
-
-### 5.3 Historique
-
-Les résultats sont stockés dans la table `predictions` avec :
-
-- l'ID utilisateur,
-- l'ID patient,
-- les variables utilisées,
-- la prédiction (`M` ou `B`),
-- la probabilité de malignité,
-- le timestamp de création,
-- un feedback éventuel médical.
-
-## 6. Variables d'environnement
-
-| Variable | Services | Description |
+| Variable | Signification | Bornes acceptées par l'API |
 |---|---|---|
-| `DB_NAME` | PostgreSQL, interface | Nom de la base de données |
-| `DB_USER` | PostgreSQL, interface | Utilisateur PostgreSQL |
-| `DB_PASSWORD` | PostgreSQL, interface | Mot de passe PostgreSQL |
-| `API_KEY` | API, interface | Clé utilisée pour sécuriser `/predict` |
-| `ALLOWED_ORIGINS` | API | Origines CORS autorisées (optionnel) |
-| `VERSION` | Docker Compose | Tag/version appliquée aux images |
-| `APP_VERSION` | Interface | Version affichée dans l'UI |
-| `API_URL` | Interface | URL de l'API interne |
-| `MODEL_PATH` | API | Chemin du joblib du modèle dans le conteneur |
-| `MODEL_VERSION` | API | Version du modèle exposée dans les réponses |
-| `ALLOW_REGISTRATION` | Interface | Active ou désactive la création de comptes |
+| `perimeter` | Périmètre des noyaux | 40 < x ≤ 250 |
+| `concave_points` | Part du contour présentant des creux | 0 ≤ x ≤ 0,3 |
+| `texture` | Écart-type des niveaux de gris | 5 < x ≤ 50 |
+| `smoothness` | Variation locale du rayon | 0,01 < x ≤ 0,3 |
+| `symmetry` | Symétrie de la forme | 0,05 < x ≤ 0,7 |
 
-Ne stockez jamais les secrets dans le dépôt. Les valeurs sensibles doivent rester dans `.env` ou un système de secret manager en environnement réel.
+Les mêmes bornes sont appliquées à trois endroits : l'API (Pydantic), l'interface (formulaire) et la base (`CHECK`).
 
-## 7. Structure du dépôt
+### La démarche d'entraînement
 
-```text
-MLops-Project-Tuto-Python/
-├── .github/
-│   └── workflows/
-│       └── ci_cd_oncoscan.yml
-├── Api/
-│   ├── api.py
-│   ├── Dockerfile
-│   └── requirements_api.txt
-├── Data/
-│   ├── evaluate/
-│   ├── process/
-│   └── raw/
-├── Database/
-│   └── schema.sql
-├── Evaluate_results/
-│   ├── confusion_matrix.png
-│   └── metrics.json
-├── Interface/
-│   ├── .streamlit/
-│   ├── app.py
-│   ├── Dockerfile
-│   ├── favicon.svg
-│   ├── requirements_interface.txt
-│   └── style.css
-├── Model/
-│   └── train.py
-├── Save_models/
-│   └── adaboost_pipeline.joblib
-├── Tests/
-│   └── test_model.py
-├── .dockerignore
-├── .env.example
-├── .gitignore
-├── LICENSE
-├── README.md
-├── docker-compose.yml
-├── commandes_git.txt
-├── recup_donnees.txt
-└── .report.json
-```
+`Model/train.py` suit un protocole qui évite les deux pièges classiques : évaluer sur des données qui ont
+servi à choisir le modèle, et optimiser une métrique qui n'a pas de sens pour le problème.
 
-## 8. Tests et validation
-
-Le projet intègre des tests de qualité du pipeline :
+1. **Découpage** 80/20 stratifié. Le jeu de test (112 lignes) n'est utilisé qu'une seule fois, à la fin.
+2. **Choix de l'algorithme** parmi 6 candidats (régression logistique, arbre, forêt aléatoire, XGBoost,
+   AdaBoost, Naive Bayes) en validation croisée à 5 plis sur le train. Critère : le meilleur recall parmi
+   les modèles qui gardent au moins 90 % de précision.
+3. **Calibration** des probabilités (sigmoid) si, et seulement si, elle améliore le score de Brier et la
+   log loss en validation croisée. Un « risque de 30 % » affiché au praticien doit vraiment correspondre à 30 %.
+4. **Seuil de décision** choisi pour maximiser le recall à précision ≥ 90 %, au lieu du 0,5 par défaut.
+   Rater une tumeur maligne coûte bien plus cher qu'une fausse alerte.
+5. **Évaluation finale** sur le test, sauvegarde du modèle et de sa fiche, traçage dans MLflow.
 
 ```bash
-pytest Tests/test_model.py -q
+pip install -r Model/requirements_train.txt
+python Model/train.py
 ```
 
-Les tests vérifient notamment :
+### Résultats (jeu de test, 112 patients)
 
-- présence et intégrité des données,
-- encodage correcte de la cible (`M`/`B` vers `1`/`0`),
-- recall, précision, F1-score et AUC,
-- robustesse de l'inférence sur des échantillons isolés,
-- stabilité de la prédiction.
+Modèle retenu : **régression logistique calibrée (sigmoid), seuil 0,352**.
 
-La validation est aussi faite dans GitHub Actions, qui compile le code Python et valide le fichier Docker Compose.
+| Recall | Précision | F1 | AUC | Brier (avant → après calibration) |
+|---|---|---|---|---|
+| 0,975 | 0,975 | 0,975 | 0,980 | 0,045 → 0,028 |
+
+Sur les 40 tumeurs malignes du test, une seule est manquée.
+
+<p align="center">
+  <img src="Image_models/Comparaison_models.png" alt="Comparaison des modèles en validation croisée" width="48%">
+  <img src="Image_models/Courbe_calibration.png" alt="Courbe de calibration" width="40%">
+</p>
+<p align="center">
+  <img src="Image_models/Matrice_confusion.png" alt="Matrice de confusion" width="36%">
+  <img src="Image_models/Courbe_apprentissage.png" alt="Courbe d'apprentissage" width="52%">
+</p>
+
+### La fiche du modèle
+
+À chaque entraînement, `Save_models/oncoscan_pipeline.json` est écrit à côté du modèle : algorithme,
+calibration, seuil, variables, version de scikit-learn, date, métriques de test. L'API la sert sur `/model`
+et les tests vérifient que le modèle et sa fiche sont cohérents.
+
+## 4. Suivi des expériences avec MLflow
+
+Chaque exécution de `train.py` crée un run MLflow contenant :
+
+- les **paramètres** (algorithme retenu, calibration, seuil, variables, découpage) ;
+- les **métriques** de test et les scores de validation croisée de chacun des 6 candidats ;
+- les **figures**, le rapport de classification et la fiche du modèle ;
+- l'**empreinte SHA-256 du fichier de données** et le **commit git** : on sait exactement avec quoi un modèle a été produit ;
+- le **modèle lui-même**, inscrit au registre sous le nom `oncoscan` (une nouvelle version par entraînement).
+
+Par défaut, tout est stocké en local (`mlflow.db` et `mlruns/`, ignorés par git). Pour consulter les expériences :
+
+```bash
+mlflow ui --backend-store-uri sqlite:///mlflow.db
+```
+
+puis ouvrir http://127.0.0.1:5000. Pour utiliser un serveur MLflow partagé, définir `MLFLOW_TRACKING_URI`
+avant de lancer l'entraînement.
+
+Le fichier `Save_models/oncoscan_pipeline.joblib` reste la source de vérité pour le déploiement : il est
+embarqué dans l'image de l'API, donc **un tag d'image correspond à un modèle précis**.
+
+## 5. API d'inférence
+
+| Méthode | Route | Authentification | Rôle |
+|---|---|---|---|
+| `GET` | `/` | non | Nom, version, statut |
+| `GET` | `/health` | non | État du modèle (utilisé par le healthcheck Docker) |
+| `GET` | `/model` | non | Fiche du modèle servi |
+| `POST` | `/predict` | `X-API-Key` | Prédiction |
+| `GET` | `/metrics` | non | Métriques Prometheus |
+| `GET` | `/docs` | non | Documentation interactive (Swagger) |
+
+```bash
+curl -s http://127.0.0.1:8000/predict \
+  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  -d '{"perimeter": 87.46, "concave_points": 0.04781, "texture": 17.77, "smoothness": 0.08474, "symmetry": 0.1812}'
+```
+
+```json
+{"prediction": "B", "label": "Bénigne", "probability_malignant": 0.0018, "model_version": "2.3.0"}
+```
+
+Toute valeur hors bornes, tout champ manquant ou inconnu renvoie `422`. Une clé absente ou fausse renvoie `401`.
+
+## 6. Interface web
+
+- **Connexion** des praticiens (mots de passe hachés avec bcrypt, blocage temporaire après 5 échecs).
+- **Nouvelle analyse** : identifiant patient pseudonymisé et 5 mesures, résultat avec le risque de malignité estimé.
+- **Historique** des 50 dernières analyses du praticien, filtrable et exportable en CSV.
+- **Validation d'un diagnostic** : une fois le résultat d'anatomopathologie connu, le praticien indique le
+  diagnostic réel. Ces validations alimentent le monitoring, qui mesure ainsi la **performance réelle** du
+  modèle et pas seulement celle du jeu de test.
+
+## 7. Monitoring
+
+La stack de monitoring (`docker-compose.monitoring.yml`) se superpose à l'application sans la modifier.
+
+| Ce qu'on surveille | Comment | Où le voir |
+|---|---|---|
+| Disponibilité, trafic, latence, erreurs de l'API | `/metrics` lu par Prometheus toutes les 15 s | Grafana : *OncoScan - API* |
+| Ce que le modèle répond (part de malins, distribution des probabilités) | Métriques métier de l'API | Grafana : *OncoScan - API* |
+| Drift des 5 variables et de la classe prédite par rapport à l'entraînement | Job Evidently, toutes les heures, sur 30 jours glissants | Grafana : *OncoScan - Modèle* et rapports HTML sur le port 8085 |
+| Performance réelle (recall, précision, faux négatifs) | Prédictions comparées aux validations des praticiens | Grafana : *OncoScan - Modèle* |
+
+Six règles d'alerte sont définies, dont : API indisponible, plus de 5 % d'erreurs, latence p95 > 500 ms,
+drift sur plus de la moitié des variables, **recall réel inférieur à 0,9**.
+
+> [!NOTE]
+> Grafana a ses propres comptes. On s'y connecte avec `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`
+> du `.env`, pas avec un compte de l'application.
+
+Détails, métriques exposées et dépannage : [Monitoring/README.md](Monitoring/README.md).
+
+## 8. Tests et qualité
+
+```bash
+pip install -r Api/requirements_api.txt -r Model/requirements_train.txt -r requirements_dev.txt
+ruff check .
+pytest
+```
+
+| Suite | Ce qui est vérifié |
+|---|---|
+| `Tests/test_model.py` (16 tests) | Intégrité des données ; cohérence entre le modèle, sa fiche et l'API (version de scikit-learn, variables, seuil, classes) ; recall ≥ 0,95, précision ≥ 0,90, F1 ≥ 0,90, AUC ≥ 0,95, Brier ≤ 0,07 ; robustesse de l'inférence |
+| `Tests/test_api.py` (19 tests) | Refus de démarrer sans clé ; authentification ; validation des entrées (bornes, champs manquants ou inconnus, types) ; format et justesse des réponses ; exposition des métriques |
+
+Un modèle moins bon que les seuils ne peut donc pas être publié : la CI échoue avant le build des images.
+
+`ruff` applique les règles de style, d'imports et de sécurité (jeu `bandit`) définies dans `pyproject.toml`.
 
 ## 9. CI/CD
 
-Le workflow GitHub Actions est présent dans :
-
-- `.github/workflows/ci_cd_oncoscan.yml`
-
-Il contient :
-
-- l'installation des dépendances Python,
-- le lancement des tests `pytest`,
-- la génération d'un rapport JSON de test,
-- la compilation du code Python,
-- la validation de `docker-compose.yml`,
-- la construction des images API et interface,
-- le scan de vulnérabilités avec Trivy,
-- le smoke test de démarrage des conteneurs,
-- la publication sur Docker Hub sur `main` ou sur un tag `vX.Y.Z`.
-
-## 10. Dépannage
-
-### Problème : la base de données ne se crée pas
-
-Vérifier le contenu de `.env` et la présence des variables :
-
-```bash
-docker compose config
-```
-
-### Problème : l'API ne démarre pas
-
-Vérifier la présence du modèle :
-
-```bash
-ls -l Save_models
-```
-
-Ensuite :
-
-```bash
-docker compose logs api
-```
-
-### Problème : l'interface ne peut pas se connecter à PostgreSQL
-
-Dans Docker, l'interface doit utiliser `DB_HOST=postgres` et non `localhost`.
-
-```bash
-docker compose logs interface postgres
-```
-
-### Problème après modification du schéma SQL
-
-Le schéma de PostgreSQL est exécuté uniquement lors de la première initialisation du volume.
-
-Pour repartir proprement :
-
-```bash
-docker compose down -v
-docker compose up --build -d
-```
-
-## 11. Licence
-
-Ce projet est distribué sous la licence MIT. Voir le fichier [LICENSE](LICENSE).
-
----
-
-<div align="center">
-  <strong>OncoScan AI</strong> · Projet pédagogique MLOps · 2026
-</div>
-```
-
-## 8. Services
-
-### Interface web — `Interface/`
-
-Technologie : Streamlit.
-
-Responsabilités : authentification des praticiens, saisie contrôlée, appel REST, affichage du résultat et consultation de l'historique PostgreSQL.
-
-Dépendances : `Interface/requirements_interface.txt`.
-
-### API d'inférence — `Api/`
-
-Technologies : FastAPI, Uvicorn, Pydantic, pandas et scikit-learn.
-
-Responsabilités : charger et vérifier les artefacts, valider les requêtes JSON, exécuter l'inférence et fournir les endpoints REST et de santé.
-
-Dépendances : `Api/requirements_api.txt`.
-
-### Base de données — `Database/`
-
-Technologie : PostgreSQL 16 Alpine.
-
-`Database/schema.sql` crée les tables `users` et `predictions`, la relation `predictions.user_id -> users.id`, les contraintes de bornes et les index nécessaires à l'historique.
-
-Le script d'initialisation n'est exécuté automatiquement que lors de la création initiale du volume. En production, une évolution de schéma doit passer par une migration versionnée.
-
-## 9. Dockerfiles et Compose
-
-### Construction des images
-
-Les deux Dockerfiles utilisent une construction multi-stage :
-
-1. une étape builder installe les dépendances ;
-2. une image runtime séparée reçoit uniquement l'environnement et le code nécessaires ;
-3. le processus s'exécute avec un utilisateur non-root ;
-4. un healthcheck vérifie le service ;
-5. l'image expose uniquement le port interne nécessaire.
-
-L'API démarre avec Uvicorn sur `8000`. L'interface démarre avec Streamlit sur `8501`.
-
-### Orchestration Compose
-
-`docker-compose.yml` :
-
-- démarre PostgreSQL avec un healthcheck ;
-- monte `Database/schema.sql` en lecture seule à l'initialisation ;
-- monte les modèles en lecture seule dans l'API ;
-- attend que PostgreSQL et l'API soient healthy avant l'interface ;
-- injecte les variables nécessaires par service ;
-- conserve les données dans `pgdata` ;
-- publie uniquement le port `8501` sur l'hôte.
-
-## 10. CI/CD et Docker Hub
-
-Le workflow [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) suit ce flux :
-
 ```mermaid
 flowchart LR
-    P[Pull request ou push] --> Q[Quality checks]
-    Q --> C[Compilation Python]
-    Q --> V[Validation Compose]
-    C --> B[Build API et interface]
-    V --> B
-    B --> T[Scan Trivy]
-    T -->|main ou tag vX.Y.Z| L[Login Docker Hub]
-    L --> U[Publication des images]
+    A[push / PR] --> B[Qualité<br>ruff, pytest,<br>compose config]
+    B --> C1[api]
+    B --> C2[interface]
+    B --> C3[evidently]
+    subgraph build["Build, scan Trivy, smoke test"]
+        C1
+        C2
+        C3
+    end
+    build -->|main ou tag vX.Y.Z| D[Publication Docker Hub<br>amd64 + arm64]
 ```
 
-### Déclencheurs
+Le workflow `.github/workflows/ci_cd_oncoscan.yml` :
 
-- pull request vers `main` : contrôles, build et scan, sans publication ;
-- push sur `main` : contrôles, build, scan et publication ;
-- tag `vX.Y.Z` : contrôles, build, scan et publication ;
-- lancement manuel avec `workflow_dispatch`.
+1. **Qualité** : lint, 35 tests, compilation, validation des 4 combinaisons de fichiers compose.
+2. **Build et scan** de chaque image : rapport Trivy CRITICAL/HIGH, blocage sur toute faille CRITICAL
+   corrigeable, puis démarrage du conteneur sans privilèges jusqu'à l'état `healthy`.
+3. **Publication** sur Docker Hub, uniquement si toutes les images sont validées, sur `main` (tag `latest`)
+   ou sur un tag git `vX.Y.Z` (tag `X.Y.Z`).
 
-### Étapes automatisées
+Dependabot propose chaque semaine les mises à jour des actions, des dépendances Python et des images de base.
+scikit-learn est exclu : changer de version impose de réentraîner le modèle.
 
-1. compilation de `Api/` et `Interface/` ;
-2. validation de `docker-compose.yml` avec des variables CI ;
-3. build des deux images avec Buildx et cache GitHub Actions ;
-4. scan Trivy des vulnérabilités `HIGH` et `CRITICAL` ;
-5. publication uniquement si toutes les étapes précédentes réussissent.
-
-### Secrets GitHub
-
-Dans **Settings → Secrets and variables → Actions**, créer :
-
-| Secret | Contenu |
-|---|---|
-| `DOCKERHUB_USERNAME` | Nom du compte Docker Hub |
-| `DOCKERHUB_TOKEN` | Access Token Docker Hub, jamais le mot de passe du compte |
-
-Repositories Docker Hub attendus :
-
-- `<DOCKERHUB_USERNAME>/oncoscan-api`
-- `<DOCKERHUB_USERNAME>/oncoscan-interface`
-
-### Versionner et publier
+**Publier une version** :
 
 ```bash
-git add .
-git commit -m "release: prepare v1.4.0"
-git push origin main
+git tag v2.3.0
+git push origin v2.3.0
 ```
 
-Pour une version immuable :
+Secrets GitHub nécessaires : `DOCKERHUB_USERNAME` et `DOCKERHUB_TOKEN` (jeton d'accès Docker Hub, pas le mot de passe).
+
+## 10. Sécurité
+
+- **Secrets** uniquement dans `.env`, jamais versionné ni copié dans les images.
+- **Conteneurs** non-root, sans aucune capacité Linux (`cap_drop: ALL`, `no-new-privileges`).
+- **Réseaux séparés** : la base n'a aucun accès extérieur, l'API ne la voit pas. Seule l'interface est publiée
+  sur toutes les interfaces ; les autres ports n'écoutent que sur `127.0.0.1`.
+- **API** : clé comparée en temps constant, entrées strictement validées, aucune donnée patient dans les logs
+  ni dans les métriques.
+- **Interface** : bcrypt, protection contre la force brute, même temps de réponse qu'un compte existe ou non,
+  inscription fermée par défaut.
+- **Base** : contraintes `CHECK` sur toutes les mesures, identifiants patients pseudonymisés, historique
+  jamais supprimé (`ON DELETE RESTRICT`), utilisateur en lecture seule pour le monitoring.
+- **Chaîne de livraison** : versions de dépendances figées, action Trivy épinglée sur un commit, scan à chaque build.
+
+### Rotation des secrets
+
+Si un secret a fuité (par exemple un `.env` poussé par erreur), le changer partout :
 
 ```bash
-git tag v1.4.0
-git push origin v1.4.0
+# 1. Nouveau mot de passe de la base, appliqué à la base existante
+docker compose exec postgres psql -U oncoscan -d oncoscan -c "ALTER ROLE oncoscan PASSWORD 'NOUVEAU_MOT_DE_PASSE';"
+# 2. Reporter ce mot de passe dans DB_PASSWORD, générer une nouvelle API_KEY dans le .env
+# 3. Recréer les conteneurs pour qu'ils lisent le nouveau .env
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 ```
 
-Le workflow produit notamment `latest`, `sha-<commit>` et `v1.4.0` pour un tag Git.
+En production, un HTTPS devant l'interface (reverse proxy) est indispensable : sans lui, les mots de passe
+circulent en clair.
 
-## 11. Variables d'environnement
+## 11. Configuration
 
-| Variable | Services | Rôle |
+Toutes les variables sont décrites dans [.env.example](.env.example).
+
+| Variable | Utilisée par | Rôle |
 |---|---|---|
-| `DB_NAME` | PostgreSQL, interface | Nom de la base |
-| `DB_USER` | PostgreSQL, interface | Utilisateur PostgreSQL |
-| `DB_PASSWORD` | PostgreSQL, interface | Mot de passe PostgreSQL |
-| `API_KEY` | API, interface | Authentification des appels `/predict` |
-| `ALLOWED_ORIGINS` | API | Origines CORS autorisées, facultatif |
-| `VERSION` | Compose | Tag local des images |
-| `API_URL` | Interface | URL interne de l'endpoint de prédiction |
-| `MODEL_PATH` | API | Chemin du modèle dans le conteneur |
-| `SCALER_PATH` | API | Chemin du scaler dans le conteneur |
+| `VERSION` | build, images | Tag des images et version affichée du modèle |
+| `DOCKERHUB_USER` | compose | Compte Docker Hub des images |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD` | postgres, interface | Base de données |
+| `API_KEY` | api, interface | Clé partagée `X-API-Key` |
+| `LOG_LEVEL` | api, evidently | Niveau de log |
+| `ALLOW_REGISTRATION` | interface | Autoriser la création de comptes |
+| `APP_TIMEZONE`, `MODEL_NAME` | interface | Affichage |
+| `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD` | grafana | Compte administrateur Grafana |
+| `MONITORING_DB_USER`, `MONITORING_DB_PASSWORD` | grafana, evidently | Accès en lecture seule à la base |
+| `EVIDENTLY_WINDOW_DAYS`, `EVIDENTLY_INTERVAL_SECONDS`, `EVIDENTLY_MIN_ROWS` | evidently | Fenêtre, fréquence et volume minimum pour le drift |
+| `PROMETHEUS_RETENTION` | prometheus | Durée de conservation des métriques |
+| `MLFLOW_TRACKING_URI` | train.py | Serveur MLflow (vide : base locale) |
 
-Les valeurs sensibles doivent rester dans `.env` localement ou dans un gestionnaire de secrets en production. `.env.example` ne contient aucune valeur réelle.
+## 12. Structure du dépôt
 
-## 12. Structure du projet
-
-```text
-API-Docker-GithubActions/
-├── .github/workflows/ci-cd.yml        # Pipeline GitHub Actions
-├── Api/
-│   ├── api.py                         # API FastAPI et inférence
-│   ├── Dockerfile                     # Image de l'API
-│   └── requirements_api.txt           # Dépendances API
-├── Database/schema.sql                 # Schéma PostgreSQL
-├── Interface/
-│   ├── app.py                         # Interface Streamlit
-│   ├── Dockerfile                     # Image de l'interface
-│   ├── favicon.svg                    # Favicon OncoScan
-│   └── requirements_interface.txt     # Dépendances Streamlit
-├── Save_models/
-│   ├── decision_tree_best.pkl         # Modèle pré-entraîné
-│   └── MinMax_scaler.pkl              # Scaler pré-entraîné
-├── .dockerignore
-├── .env.example
-├── .gitignore
-├── docker-compose.yml
-├── LICENSE
-└── README.md
+```
+.
+├── Api/                       API FastAPI (api.py, Dockerfile, dépendances)
+├── Interface/                 Application Streamlit (app.py, style.css, Dockerfile)
+├── Model/                     Entraînement (train.py, dépendances)
+├── Save_models/               Modèle servi + sa fiche JSON
+├── Data/                      Données brutes, nettoyées, sélectionnées
+├── Notebook/                  Analyse exploratoire
+├── Database/                  Schéma PostgreSQL et migration
+├── Monitoring/                Prometheus, Grafana, job Evidently, utilisateur lecture seule
+├── Tests/                     Tests du modèle et de l'API
+├── Image_models/              Figures générées par train.py
+├── .github/                   Workflow CI/CD et Dependabot
+├── docker-compose.yml         Application, images construites depuis le code
+├── docker-compose.prod.yml    Application, images tirées de Docker Hub
+├── docker-compose.monitoring.yml   Stack de monitoring (se superpose aux deux précédents)
+├── pyproject.toml             Configuration de pytest et ruff
+├── requirements_dev.txt       Outils de test et de lint
+└── .env.example               Modèle de configuration
 ```
 
 ## 13. Dépannage
 
-### Variable Compose manquante
+| Symptôme | Cause probable | Solution |
+|---|---|---|
+| `required variable ... is missing a value` | Variable absente du `.env` | Compléter le `.env` à partir de `.env.example` |
+| L'interface affiche « service de comptes indisponible » | Mot de passe du `.env` différent de celui de la base | La base garde le mot de passe de sa création : voir [Rotation des secrets](#rotation-des-secrets) |
+| `api` reste `unhealthy` | Modèle absent ou `API_KEY` vide | `docker compose logs api` |
+| Grafana refuse la connexion | Mauvais identifiant (compte OncoScan au lieu de `admin`) ou mot de passe changé après le premier démarrage | Voir [Monitoring/README.md](Monitoring/README.md#grafana--impossible-de-se-connecter) |
+| Panneaux de drift vides | Moins de 30 prédictions sur 30 jours | Normal : le drift n'a pas de sens sur trop peu de données |
+| Panneaux de performance réelle vides | Aucune analyse validée par un praticien | Valider des diagnostics dans l'onglet Historique |
+| Nouvelles colonnes absentes de la base | `schema.sql` ne s'exécute qu'à la création du volume | Appliquer `Database/migration.sql` |
 
-```bash
-docker compose config
-```
+## 14. Limites et pistes d'amélioration
 
-Vérifier que `.env` contient `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `API_KEY` et `VERSION`.
+- **Données** : 557 patients d'un seul centre, collectés dans les années 1990. Aucune généralisation n'est
+  possible ; le projet ne prétend pas en faire.
+- **Réentraînement** : il reste manuel. Étape suivante naturelle : le déclencher quand le drift ou la baisse
+  du recall réel dépasse un seuil, puis promouvoir le modèle dans le registre MLflow après validation.
+- **Alertes** : elles sont évaluées par Prometheus mais pas encore envoyées (Alertmanager vers e-mail ou Slack).
+- **Gestion des comptes** : pas d'interface d'administration ni de rôles.
+- **HTTPS** : à placer devant l'interface pour un vrai déploiement.
 
-### API unhealthy
+## 15. Auteur et licence
 
-```bash
-docker compose logs api
-```
+Projet conçu et réalisé par **Madiba**.
 
-Vérifier la présence de :
-
-```text
-Save_models/decision_tree_best.pkl
-Save_models/MinMax_scaler.pkl
-```
-
-### Interface et PostgreSQL
-
-L'interface doit utiliser `DB_HOST=postgres`, jamais `localhost` dans Docker.
-
-```bash
-docker compose ps
-docker compose logs postgres interface
-```
-
-### Schéma non mis à jour
-
-Les scripts d'initialisation ne sont joués qu'une fois par volume. Pour une démonstration sans données à conserver :
-
-```bash
-docker compose down -v
-docker compose up --build -d
-```
-
-En production, appliquer une migration contrôlée et sauvegarder la base avant toute modification.
-
-## 14. Limites et évolutions
-
-Pour une production médicale réelle, prévoir notamment :
-
-- migrations de base de données versionnées ;
-- tests unitaires et tests d'intégration automatisés ;
-- gestion de secrets dédiée ;
-- HTTPS derrière un reverse proxy ;
-- authentification avec sessions sécurisées ;
-- journalisation et supervision centralisées ;
-- validation clinique, traçabilité et gouvernance des modèles ;
-- versionnement des modèles et vérification de leur empreinte ;
-- limitation de débit et sauvegardes PostgreSQL.
-
-## 15. Licence
-
-Ce projet est distribué sous licence MIT. Voir [LICENSE](LICENSE).
-
-Copyright (c) 2026 @Madiba
-
----
-
-<div align="center">
-  <strong>OncoScan AI</strong> · Projet pédagogique MLOps · @Madiba
-</div>
+Distribué sous licence [MIT](LICENSE).

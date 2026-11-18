@@ -1,0 +1,37 @@
+# Configuration des outils de qualité (le projet n'est pas un paquet installable).
+
+[project]
+name = "oncoscan"
+version = "2.3.0"
+description = "Projet MLOps open source : classification de tumeurs mammaires, de l'entraînement au monitoring."
+authors = [{ name = "Madiba" }]
+license = "MIT"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["Tests"]
+addopts = "-ra"
+filterwarnings = [
+    # Avertissement interne à starlette/anyio, sans rapport avec notre code
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["Notebook", "Data"]
+
+[tool.ruff.lint]
+# E/F : erreurs de base, I : ordre des imports, B : pièges courants,
+# UP : syntaxe Python moderne, S : sécurité (bandit), SIM : simplifications
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+ignore = [
+    "S101",  # assert est la base de pytest
+    "S603",  # subprocess avec une commande fixe (git rev-parse) dans train.py
+    "S607",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"Model/train.py" = ["E402"]   # matplotlib.use("Agg") doit précéder l'import de pyplot
+"Monitoring/evidently/drift_job.py" = ["S104", "S608"]  # écoute sur 0.0.0.0 dans le conteneur ; colonnes SQL fixes
+"Api/api.py" = ["B008"]       # Depends()/Security() dans les signatures : c'est l'usage FastAPI

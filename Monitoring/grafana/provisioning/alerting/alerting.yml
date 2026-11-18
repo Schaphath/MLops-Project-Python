@@ -1,0 +1,2 @@
+# Alertes Grafana (optionnel). Les alertes principales sont dans Monitoring/prometheus/alerts.yml.
+apiVersion: 1

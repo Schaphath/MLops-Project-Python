@@ -1,0 +1,60 @@
+# Règles d'alerte - visibles dans Prometheus (onglet Alerts) et dans Grafana.
+# Seuils volontairement simples : à ajuster quand on aura du trafic réel.
+
+groups:
+  - name: oncoscan-api
+    rules:
+      - alert: ApiDown
+        expr: up{job="oncoscan-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "L'API OncoScan ne répond plus à Prometheus"
+
+      - alert: ApiErreurs5xx
+        expr: |
+          sum(rate(http_requests_total{job="oncoscan-api", status="5xx"}[5m]))
+            / clamp_min(sum(rate(http_requests_total{job="oncoscan-api"}[5m])), 1e-9) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Plus de 5 % de réponses 5xx sur l'API"
+
+      - alert: ApiLatenceElevee
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_seconds_bucket{job="oncoscan-api", handler="/predict"}[5m]))
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latence p95 de /predict supérieure à 500 ms"
+
+  - name: oncoscan-modele
+    rules:
+      - alert: JobEvidentlyEnEchec
+        expr: oncoscan_monitoring_last_run_success == 0 or up{job="oncoscan-evidently"} == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Le job de monitoring Evidently ne tourne plus correctement"
+
+      - alert: DriftDonnees
+        expr: oncoscan_drift_share > 0.5
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Plus de la moitié des variables ont dérivé par rapport à l'entraînement"
+
+      - alert: RecallEnBaisse
+        expr: oncoscan_live_recall < 0.9 and oncoscan_confirmed_rows >= 30
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Recall < 0.9 sur les cas confirmés par les médecins (tumeurs malignes manquées)"

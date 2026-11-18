@@ -1,0 +1,27 @@
+# Sources de données chargées automatiquement au démarrage de Grafana.
+# Les ${...} sont lus dans l'environnement du conteneur (voir docker-compose.monitoring.yml).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  # Lecture directe de l'historique des prédictions (volume, classes, feedback médecins)
+  - name: OncoScan PostgreSQL
+    uid: oncoscan-postgres
+    type: grafana-postgresql-datasource
+    url: postgres:5432
+    user: ${MONITORING_DB_USER}
+    editable: false
+    jsonData:
+      database: ${DB_NAME}
+      sslmode: disable
+      postgresVersion: 1600
+      maxOpenConns: 5
+    secureJsonData:
+      password: ${MONITORING_DB_PASSWORD}

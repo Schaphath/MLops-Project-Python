@@ -69,8 +69,7 @@ CREATE TABLE IF NOT EXISTS predictions (
 CREATE INDEX IF NOT EXISTS idx_predictions_user_date
     ON predictions (user_id, created_at DESC);
 
--- Suivi d'un patient chez un praticien
--- (avant : index sur patient_id seul, alors que tout est filtré par user_id)
+-- Suivi d'un patient chez un praticien (toutes les requêtes filtrent d'abord sur user_id)
 CREATE INDEX IF NOT EXISTS idx_predictions_user_patient
     ON predictions (user_id, patient_id);
 

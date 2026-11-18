@@ -1,6 +1,6 @@
 # Compose de développement : construit les images depuis le code.
 # Publier :  docker compose build && docker compose push
-# (pour ARM + x86, voir la commande buildx dans le README)
+
 
 # Limite la taille des logs
 x-logging: &logging
@@ -29,7 +29,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data # Données conservées même si le conteneur est supprimé
       # Exécuté uniquement à la première création du volume.
-      # Base existante -> lancer migration_v2_1.sql à la main.
+      # Base déjà existante : appliquer Database/migration.sql à la main.
       - ./Database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -46,14 +46,14 @@ services:
       context: .
       dockerfile: ./Api/Dockerfile
       args:
-        VERSION: ${VERSION:-2.0.0}
+        VERSION: ${VERSION:?VERSION must be set}
     # Format Docker Hub : pseudo/nom:tag
-    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-api:${VERSION:-2.0.0}
+    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-api:${VERSION:?VERSION must be set}
     container_name: oncoscan-api
     restart: unless-stopped
     environment:
       API_KEY: ${API_KEY:?API_KEY must be set}
-      LOG_LEVEL: INFO
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # MODEL_PATH et MODEL_VERSION sont fixés dans l'image (modèle inclus)
     # Healthcheck défini dans Api/Dockerfile
     ports:
@@ -67,8 +67,8 @@ services:
       context: .
       dockerfile: ./Interface/Dockerfile
       args:
-        VERSION: ${VERSION:-2.0.0}
-    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-app:${VERSION:-2.0.0}
+        VERSION: ${VERSION:?VERSION must be set}
+    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-app:${VERSION:?VERSION must be set}
     container_name: oncoscan-app
     restart: unless-stopped
     environment:
@@ -80,6 +80,8 @@ services:
       DB_USER: ${DB_USER:?DB_USER must be set}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false} # Fermé par défaut
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Paris}
+      MODEL_NAME: ${MODEL_NAME:-Régression logistique calibrée}
     # Healthcheck défini dans Interface/Dockerfile
     depends_on:
       postgres:

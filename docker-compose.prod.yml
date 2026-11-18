@@ -38,13 +38,13 @@ services:
 
   api:
     <<: [*logging, *hardening]
-    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-api:${VERSION:-2.0.0}
+    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-api:${VERSION:?VERSION must be set}
     pull_policy: always # toujours prendre la version publiée, jamais une image locale
     container_name: oncoscan-api
     restart: unless-stopped
     environment:
       API_KEY: ${API_KEY:?API_KEY must be set}
-      LOG_LEVEL: INFO
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "127.0.0.1:8000:8000"
     networks:
@@ -52,7 +52,7 @@ services:
 
   interface:
     <<: [*logging, *hardening]
-    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-app:${VERSION:-2.0.0}
+    image: ${DOCKERHUB_USER:?DOCKERHUB_USER must be set}/oncoscan-app:${VERSION:?VERSION must be set}
     pull_policy: always
     container_name: oncoscan-app
     restart: unless-stopped
@@ -65,6 +65,8 @@ services:
       DB_USER: ${DB_USER:?DB_USER must be set}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Paris}
+      MODEL_NAME: ${MODEL_NAME:-Régression logistique calibrée}
     depends_on:
       postgres:
         condition: service_healthy

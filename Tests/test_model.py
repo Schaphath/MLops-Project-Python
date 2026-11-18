@@ -1,4 +1,4 @@
-# Tests de validation du pipeline ML.
+# Tests de validation du modèle : données, cohérence de l'artefact, performances, robustesse.
 # python -m pytest Tests/test_model.py -v --json-report --json-report-file=Tests_results/results.json
 
 
@@ -20,11 +20,9 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 
-
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_PATH = BASE_DIR / "Data" / "process" / "cancer_select.csv"
-# Nom fixe produit par Model/train.py (avant : le .joblib le plus récent du dossier,
-# ce qui ne veut rien dire en CI après un git clone)
+# Nom fixe produit par Model/train.py
 DEFAULT_MODEL_PATH = BASE_DIR / "Save_models" / "oncoscan_pipeline.joblib"
 
 DATA_PATH = Path(os.getenv("TEST_DATA_PATH", str(DEFAULT_DATA_PATH)))
@@ -204,5 +202,6 @@ class TestRobustesseInference:
 
     def test_colonnes_manquantes_refusees(self, pipeline, predictions):
         X_incomplet = predictions["X_test"].drop(columns=[SELECTED_FEATURES[0]])
-        with pytest.raises(Exception):
+        # scikit-learn vérifie les noms de colonnes vus au fit
+        with pytest.raises(ValueError):
             pipeline.predict(X_incomplet)

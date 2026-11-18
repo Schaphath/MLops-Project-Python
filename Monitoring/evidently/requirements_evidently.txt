@@ -1,0 +1,5 @@
+# Versions exactes pour une construction reproductible.
+evidently==0.7.23         # rapports de drift (HTML + valeurs exportées vers Prometheus)
+prometheus-client==0.26.0 # expose /metrics pour Prometheus
+psycopg[binary]==3.3.9    # lecture de la table predictions (PostgreSQL)
+pandas==2.2.3             # evidently 0.7.23 ne fonctionne pas avec pandas 3 (même version que l'API)

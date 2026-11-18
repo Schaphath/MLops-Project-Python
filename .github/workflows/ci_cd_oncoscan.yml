@@ -1,4 +1,4 @@
-# À placer dans : .github/workflows/ci-cd.yml
+# Pipeline CI/CD OncoScan : qualité -> build + scan + smoke test -> publication Docker Hub
 name: OncoScan CI/CD
 
 # Quand le workflow se déclenche
@@ -43,17 +43,22 @@ jobs:
           cache: pip
           cache-dependency-path: |
             Api/requirements_api.txt
+            requirements_dev.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r Api/requirements_api.txt
-          python -m pip install pytest pytest-json-report
+          python -m pip install -r Api/requirements_api.txt -r requirements_dev.txt
 
-      - name: Run model tests
+      # Erreurs, imports, failles de sécurité courantes (règles dans pyproject.toml)
+      - name: Lint (ruff)
+        run: ruff check .
+
+      # Tests du modèle (performances, cohérence de l'artefact) et de l'API (auth, validation, métriques)
+      - name: Run tests
         run: |
           mkdir -p Tests_results
-          pytest Tests/test_model.py -v --json-report --json-report-file=Tests_results/results.json
+          pytest -v --json-report --json-report-file=Tests_results/results.json
 
       # Conserve le rapport de tests (même si les tests échouent)
       - name: Upload test report
@@ -67,10 +72,9 @@ jobs:
 
       # Vérifie qu'il n'y a pas d'erreur de syntaxe Python
       - name: Compile Python sources
-        run: python -m compileall -q Api Interface Model
+        run: python -m compileall -q Api Interface Model Monitoring
 
-      # Vérifie les deux fichiers compose (avec des valeurs factices).
-      # DOCKERHUB_USER est maintenant obligatoire dans le compose : sans lui, cette étape échoue.
+      # Vérifie les fichiers compose avec des valeurs factices (toutes les variables obligatoires)
       - name: Validate Docker Compose configuration
         env:
           DOCKERHUB_USER: ci
@@ -79,9 +83,12 @@ jobs:
           DB_PASSWORD: ci_password
           API_KEY: ci_api_key
           VERSION: ci
+          GRAFANA_ADMIN_PASSWORD: ci_grafana
         run: |
           docker compose -f docker-compose.yml config --quiet
           docker compose -f docker-compose.prod.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.monitoring.yml config --quiet
+          docker compose -f docker-compose.prod.yml -f docker-compose.monitoring.yml config --quiet
 
   # -----------------------------------------------------------------
   # 2) Construction, scan de sécurité et test de démarrage des images
@@ -95,16 +102,21 @@ jobs:
     env:
       IMAGE_REF: ${{ matrix.image }}:ci-${{ github.sha }}
     strategy:
-      fail-fast: false   # si une image échoue, l'autre est quand même testée
+      fail-fast: false   # si une image échoue, les autres sont quand même testées
       matrix:
         include:
           - name: api
             image: oncoscan-api
             dockerfile: Api/Dockerfile
-          # Même nom que dans le docker-compose (avant : oncoscan-interface)
+            context: .
           - name: interface
             image: oncoscan-app
             dockerfile: Interface/Dockerfile
+            context: .
+          - name: evidently
+            image: oncoscan-evidently
+            dockerfile: Monitoring/evidently/Dockerfile
+            context: Monitoring/evidently
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -126,7 +138,7 @@ jobs:
       - name: Build image for testing
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           tags: ${{ env.IMAGE_REF }}
           build-args: |
@@ -168,7 +180,7 @@ jobs:
 
       # Vérifie que le conteneur démarre vraiment et devient "healthy",
       # avec les mêmes restrictions que dans docker-compose (sans privilèges).
-      # On teste l'image telle qu'elle sera publiée : plus de montage du modèle.
+      # On teste l'image telle qu'elle sera publiée, modèle inclus.
       - name: Smoke test (container starts and is healthy)
         env:
           NAME: ${{ matrix.name }}
@@ -181,6 +193,11 @@ jobs:
               ;;
             interface)
               ARGS=(-e API_KEY=ci-test-key -e DB_PASSWORD=ci-test-password)
+              ;;
+            evidently)
+              # Pas de base en CI : le job échoue à se connecter, mais le serveur /metrics
+              # doit rester debout (c'est ce que vérifie le healthcheck)
+              ARGS=(-e DB_NAME=ci -e DB_USER=ci -e DB_PASSWORD=ci -e DB_HOST=127.0.0.1)
               ;;
             *)
               echo "Service inconnu : $NAME"
@@ -225,9 +242,15 @@ jobs:
           - name: api
             image: oncoscan-api
             dockerfile: Api/Dockerfile
+            context: .
           - name: interface
             image: oncoscan-app
             dockerfile: Interface/Dockerfile
+            context: .
+          - name: evidently
+            image: oncoscan-evidently
+            dockerfile: Monitoring/evidently/Dockerfile
+            context: Monitoring/evidently
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -239,8 +262,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # Calcule les noms de tags de l'image
-      # (type=ref,event=tag retiré : il doublait le tag semver avec un "v" devant)
+      # Tags publiés : sha-xxxxxxx, latest (sur main) et X.Y.Z (sur un tag vX.Y.Z)
       - name: Generate image metadata
         id: metadata
         uses: docker/metadata-action@v6
@@ -258,12 +280,11 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Reconstruit avec le cache du job précédent et publie.
-      # VERSION est maintenant passé : avant, toutes les images affichaient 2.0.0
-      # (MODEL_VERSION compris), quel que soit le tag publié.
+      # VERSION est inscrit dans l'image (et donc dans MODEL_VERSION côté API).
       - name: Push image to Docker Hub
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           build-args: |

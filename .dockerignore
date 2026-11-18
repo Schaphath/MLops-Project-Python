@@ -1,21 +1,43 @@
-# Secrets : ne doivent jamais finir dans une image
+# Les images API et interface sont construites depuis la racine du projet.
+# Tout ce qui n'est pas listé ici part dans le contexte de build : on garde le strict nécessaire.
+
+# Secrets : ne doivent jamais se retrouver dans une image
 **/.env
 **/.env.*
 
-# Inutile dans les images
+# Git, CI, éditeurs
 .git
 .github
+.vscode
+.idea
+
+# Python
 **/__pycache__
 **/*.pyc
 **/.pytest_cache
+**/.ruff_cache
 **/.venv
 **/venv
+**/.ipynb_checkpoints
+
+# Dossiers qui ne servent à aucune des deux images
 Data/
+Database/
+Image_models/
+Model/
+Monitoring/
+Notebook/
+Ressources_docker/
 Tests/
 Tests_results/
-Notebooks/
+mlruns/
+mlartifacts/
+mlflow.db
+Api/logs/
 *.md
+docker-compose*.yml
 
-# Ne garder que le modèle servi par l'API (Save_models/ n'est PAS exclu en entier)
+# Seuls le modèle servi par l'API et sa fiche de métadonnées sont utiles
 Save_models/*
 !Save_models/oncoscan_pipeline.joblib
+!Save_models/oncoscan_pipeline.json
