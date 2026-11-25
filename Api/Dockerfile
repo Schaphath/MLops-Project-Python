@@ -5,7 +5,7 @@
 #---------------#
 # Étape 1 : on installe les dépendances Python dans un environnement virtuel.
 # Cette étape ne sera PAS dans l'image finale (image plus légère et plus sûre).
-FROM python:3.12.12-slim-bookworm AS builder
+FROM python:3.12.15-slim-bookworm AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -27,7 +27,7 @@ RUN pip install -r requirements_api.txt
 #-----------------#
 #  RUNTIME STAGE  #
 #-----------------#
-FROM python:3.12.12-slim-bookworm AS runtime
+FROM python:3.12.15-slim-bookworm AS runtime
 
 # Version passée au build (docker compose build ou --build-arg VERSION=...)
 ARG VERSION=dev
