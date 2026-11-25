@@ -8,7 +8,7 @@
 #---------------#
 # Étape 1 : dépendances dans un environnement virtuel.
 # L'image slim n'a PAS de compilateur : utiliser psycopg2-binary, pas psycopg2.
-FROM python:3.12.12-slim-bookworm AS builder
+FROM python:3.12.15-slim-bookworm AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -28,7 +28,7 @@ RUN pip install -r requirements_interface.txt
 #-----------------#
 #  RUNTIME STAGE  #
 #-----------------#
-FROM python:3.12.12-slim-bookworm AS runtime
+FROM python:3.12.15-slim-bookworm AS runtime
 
 ARG VERSION=dev
 
