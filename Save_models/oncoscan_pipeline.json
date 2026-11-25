@@ -11,7 +11,7 @@
     "symmetry"
   ],
   "sklearn_version": "1.8.0",
-  "trained_at": "2026-11-18T18:19:08+00:00",
+  "trained_at": "2026-11-25T03:00:33+00:00",
   "n_train": 445,
   "n_test": 112,
   "test_metrics": {

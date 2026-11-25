@@ -1,4 +1,4 @@
-"""Entraînement du modèle OncoScan.
+"""Entraînement.
 
 Démarche, dans l'ordre :
     1. comparaison de 6 modèles en validation croisée (sur le train uniquement) ;
@@ -79,7 +79,7 @@ MIN_PRECISION = 0.90  # contrainte utilisée pour choisir le modèle et le seuil
 MIN_RECALL = 0.95     # seulement contrôlé et signalé
 
 # Nom de fichier fixe : l'API, le Dockerfile et la CI n'ont pas à changer
-# quand un autre algorithme gagne la comparaison.
+# quand un autre algorithme gagne la compétition.
 MODEL_FILENAME = "oncoscan_pipeline.joblib"
 
 # MLflow : base SQLite locale par défaut, ou serveur distant via MLFLOW_TRACKING_URI
@@ -103,15 +103,15 @@ def build_candidates(y_train: np.ndarray) -> dict[str, Pipeline]:
         ),
         "Random Forest": RandomForestClassifier(
             n_estimators=300, max_depth=6, min_samples_leaf=4,
-            class_weight="balanced", random_state=RANDOM_STATE, n_jobs=-1,
+            class_weight="balanced", random_state=RANDOM_STATE, n_jobs=-1
         ),
         "XGBoost": XGBClassifier(
             n_estimators=300, learning_rate=0.05, max_depth=3,
-            scale_pos_weight=scale_pos_weight, eval_metric="logloss", random_state=RANDOM_STATE,
+            scale_pos_weight=scale_pos_weight, eval_metric="logloss", random_state=RANDOM_STATE
         ),
         "AdaBoost": AdaBoostClassifier(
             estimator=DecisionTreeClassifier(max_depth=1, class_weight="balanced"),
-            n_estimators=300, learning_rate=0.05, random_state=RANDOM_STATE,
+            n_estimators=300, learning_rate=0.05, random_state=RANDOM_STATE
         ),
         "Naive Bayes": GaussianNB(),
     }
@@ -190,7 +190,7 @@ def select_calibration(pipeline, X_train, y_train, cv):
     improves = (
         scores["sigmoid"]["brier"] < scores["aucune"]["brier"]
         and scores["sigmoid"]["log_loss"] < scores["aucune"]["log_loss"]
-    )
+        )
     best_method = "sigmoid" if improves else "aucune"
     return best_method, candidates[best_method], oof_probas[best_method], scores
 
@@ -210,6 +210,7 @@ def select_threshold(y_true, proba, min_precision=MIN_PRECISION):
         print(f"/!\\ Précision de {min_precision:.0%} inatteignable : seuil 0.5 conservé.")
         return 0.5
     best_recall = recall[ok].max()
+    
     # À recall égal, on prend le seuil le plus haut (moins de fausses alertes)
     return float(thresholds[ok & (recall == best_recall)].max())
 
@@ -223,10 +224,12 @@ def build_figures(results_df, cm, y_test, proba_raw, proba_final, best_pipeline,
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.barh(
         results_df["Model"], results_df["Recall"], xerr=results_df["Recall_std"],
-        color=plt.cm.RdYlGn(results_df["Recall"]), edgecolor="black", capsize=4,
-    )
+        color=plt.cm.RdYlGn(results_df["Recall"]), edgecolor="black", capsize=4
+        )
+    
     for i, recall in enumerate(results_df["Recall"]):
         ax.text(recall + 0.03, i, f"{recall:.3f}", va="center", fontweight="bold")
+
     ax.set_xlabel("Recall moyen (validation croisée)", fontsize=12, fontweight="bold")
     ax.set_title("Comparaison des modèles (CV 5 plis sur le train)", fontsize=13, fontweight="bold")
     ax.set_xlim(0, 1.15)
@@ -236,8 +239,7 @@ def build_figures(results_df, cm, y_test, proba_raw, proba_final, best_pipeline,
 
     fig, ax = plt.subplots(figsize=(6, 5))
     ConfusionMatrixDisplay(cm, display_labels=["Bénin (0)", "Malin (1)"]).plot(
-        ax=ax, colorbar=False, cmap="Blues"
-    )
+        ax=ax, colorbar=False, cmap="Blues")
     ax.set_title(f"Matrice de confusion - {best_model_name}", fontsize=13, fontweight="bold")
     fig.tight_layout()
     figures["Matrice_confusion.png"] = fig
@@ -246,10 +248,10 @@ def build_figures(results_df, cm, y_test, proba_raw, proba_final, best_pipeline,
     fig, ax = plt.subplots(figsize=(7, 6))
     CalibrationDisplay.from_predictions(
         y_test, proba_raw, n_bins=8, ax=ax, name=f"{best_model_name} (non calibré)"
-    )
+        )
     CalibrationDisplay.from_predictions(
         y_test, proba_final, n_bins=8, ax=ax, name=f"Calibré : {calib_method}"
-    )
+        )
     ax.set_title("Courbe de calibration (test)", fontsize=13, fontweight="bold")
     fig.tight_layout()
     figures["Courbe_calibration.png"] = fig
@@ -257,8 +259,7 @@ def build_figures(results_df, cm, y_test, proba_raw, proba_final, best_pipeline,
     print("Génération de la courbe d'apprentissage...")
     train_sizes, train_scores, val_scores = learning_curve(
         estimator=clone(best_pipeline), X=X_train, y=y_train, cv=cv,
-        scoring="recall", n_jobs=-1, train_sizes=np.linspace(0.1, 1.0, 10),
-    )
+        scoring="recall", n_jobs=-1, train_sizes=np.linspace(0.1, 1.0, 10))
     train_mean = train_scores.mean(axis=1)
     val_mean = val_scores.mean(axis=1)
 
@@ -291,7 +292,7 @@ def train_model(
     save_models: bool = True,
     output_dir: Path = MODELS_DIR,
 ):
-    """Entraîne, évalue et (si demandé) sauvegarde le modèle.
+    """Entraîne, évalue et sauvegarde le modèle.
 
     Renvoie un dictionnaire avec tout ce qu'il faut pour tracer l'expérience :
     modèle final, métriques, paramètres retenus, figures, fiche de métadonnées.
@@ -306,6 +307,7 @@ def train_model(
 
     X = df[selected_features]
     y = df[target_col]
+
     if pd.api.types.is_object_dtype(y) or pd.api.types.is_string_dtype(y):
         y = y.map({"M": 1, "B": 0}).astype(int)
 
@@ -314,10 +316,11 @@ def train_model(
     print(f"Malin (M=1) : {(y == 1).sum()} ({(y == 1).mean() * 100:.1f}%)\n")
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
-    )
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y)
+    
     y_train = y_train.to_numpy()
     y_test = y_test.to_numpy()
+
     print(f"Train : {X_train.shape[0]} échantillons | Test : {X_test.shape[0]} échantillons\n")
 
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
@@ -344,8 +347,8 @@ def train_model(
     # FixedThresholdClassifier garde predict_proba et classes_ : l'API et les
     # tests n'ont pas à savoir qu'il y a un seuil personnalisé derrière.
     final_model = FixedThresholdClassifier(
-        calibrated_estimator, threshold=threshold, response_method="predict_proba"
-    )
+        calibrated_estimator, threshold=threshold, response_method="predict_proba")
+    
     final_model.fit(X_train, y_train)
 
     # Modèle brut (sans calibration ni seuil), uniquement pour mesurer ce que la calibration apporte
@@ -368,12 +371,12 @@ def train_model(
     }
 
     report = classification_report(
-        y_test, y_pred, target_names=["Bénin (0)", "Malin (1)"], digits=3, zero_division=0
-    )
+        y_test, y_pred, target_names=["Bénin (0)", "Malin (1)"], digits=3, zero_division=0)
+    
     print(report)
-    print(f"AUC         : {test_metrics['auc']:.3f}")
+    print(f"AUC : {test_metrics['auc']:.3f}")
     print(f"Brier score : {test_metrics['brier_avant']:.4f} -> {test_metrics['brier_apres']:.4f}")
-    print(f"Log loss    : {test_metrics['log_loss_avant']:.4f} -> {test_metrics['log_loss_apres']:.4f}\n")
+    print(f"Log loss : {test_metrics['log_loss_avant']:.4f} -> {test_metrics['log_loss_apres']:.4f}\n")
 
     # Prévient tout de suite si la CI (Tests/test_model.py) va refuser ce modèle
     if test_metrics["recall"] < MIN_RECALL or test_metrics["precision"] < MIN_PRECISION:
@@ -389,8 +392,7 @@ def train_model(
 
     figures = build_figures(
         results_df, cm, y_test, proba_raw, proba_final, best_pipeline,
-        best_model_name, calib_method, X_train, y_train, cv,
-    )
+        best_model_name, calib_method, X_train, y_train, cv)
 
     # Fiche qui accompagne le modèle : ce qu'il est, avec quoi il a été fait, ce qu'il vaut
     metadata = {
@@ -406,18 +408,18 @@ def train_model(
         "test_metrics": {k: round(float(v), 4) for k, v in test_metrics.items()},
         "calibration_cv": {
             m: {k: round(float(v), 4) for k, v in s.items()} for m, s in calib_scores.items()
-        },
+        }
     }
 
     model_path = None
+
     if save_models:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         model_path = output_dir / MODEL_FILENAME
         joblib.dump(final_model, model_path)
         model_path.with_suffix(".json").write_text(
-            json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+            json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"Modèle sauvegardé : {model_path}")
         print(f"Fiche du modèle   : {model_path.with_suffix('.json')}")
 
@@ -428,7 +430,7 @@ def train_model(
         "cv_results": results_df,
         "report": report,
         "figures": figures,
-        "X_test": X_test,
+        "X_test": X_test
     }
 
 
@@ -440,8 +442,8 @@ def file_sha256(path: Path) -> str:
 def git_commit() -> str:
     try:
         return subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=BASE_DIR, capture_output=True, text=True, check=True
-        ).stdout.strip()
+            ["git", "rev-parse", "HEAD"], cwd=BASE_DIR, capture_output=True, 
+            text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "inconnu"
 
@@ -477,6 +479,7 @@ def log_to_mlflow(outputs: dict, data_path: Path, df: pd.DataFrame) -> None:
     if mlflow.get_experiment_by_name(MLFLOW_EXPERIMENT) is None:
         artifact_location = (BASE_DIR / "mlruns").as_uri() if tracking_uri.startswith("sqlite") else None
         mlflow.create_experiment(MLFLOW_EXPERIMENT, artifact_location=artifact_location)
+        
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
     meta = outputs["metadata"]

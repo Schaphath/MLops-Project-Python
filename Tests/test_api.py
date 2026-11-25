@@ -3,7 +3,7 @@
 Le TestClient de FastAPI appelle l'application directement et déclenche le
 démarrage (chargement du vrai modèle de Save_models/).
 
-    python -m pytest Tests/test_api.py -v
+python -m pytest Tests/test_api.py -v
 """
 
 import importlib
@@ -20,22 +20,21 @@ VALID_SAMPLE = {
     "concave_points": 0.04781,
     "texture": 17.77,
     "smoothness": 0.08474,
-    "symmetry": 0.1812,
-}
-# Patient clairement malin du jeu de données (valeurs « worst » élevées)
+    "symmetry": 0.1812
+    }
+
+# Tumeur clairement maligne 
 MALIGNANT_SAMPLE = {
     "perimeter": 184.6,
     "concave_points": 0.2654,
     "texture": 17.33,
     "smoothness": 0.1622,
-    "symmetry": 0.4601,
-}
-
+    "symmetry": 0.4601
+    }
 
 @pytest.fixture(scope="module")
 def api():
     """Importe api.py une seule fois, avec une clé de test.
-
     La clé est lue à l'import ; elle est posée avant pour que le .env local
     (lu avec override=False) ne puisse pas la remplacer.
     """
@@ -50,10 +49,8 @@ def client(api):
     with TestClient(api.app) as test_client:
         yield test_client
 
-
 def auth(key=TEST_KEY):
     return {"X-API-Key": key}
-
 
 class TestDemarrage:
     def test_refuse_de_demarrer_sans_cle(self, api, monkeypatch):
@@ -72,7 +69,6 @@ class TestDemarrage:
         assert card["features"] == list(VALID_SAMPLE)
         assert 0 < card["decision_threshold"] < 1
 
-
 class TestAuthentification:
     def test_sans_cle(self, client):
         assert client.post("/predict", json=VALID_SAMPLE).status_code == 401
@@ -80,7 +76,6 @@ class TestAuthentification:
     def test_mauvaise_cle(self, client):
         response = client.post("/predict", json=VALID_SAMPLE, headers=auth("mauvaise-cle"))
         assert response.status_code == 401
-
 
 class TestValidationEntrees:
     @pytest.mark.parametrize(
@@ -91,7 +86,7 @@ class TestValidationEntrees:
             ("concave_points", -0.01),
             ("texture", 51.0),
             ("smoothness", 0.0),
-            ("symmetry", 0.8),
+            ("symmetry", 0.8)
         ],
     )
     def test_valeur_hors_bornes(self, client, field, value):
@@ -110,7 +105,6 @@ class TestValidationEntrees:
         payload = {**VALID_SAMPLE, "perimeter": "beaucoup"}
         assert client.post("/predict", json=payload, headers=auth()).status_code == 422
 
-
 class TestPrediction:
     def test_format_de_reponse(self, client):
         response = client.post("/predict", json=VALID_SAMPLE, headers=auth())
@@ -128,7 +122,6 @@ class TestPrediction:
         body = client.post("/predict", json=MALIGNANT_SAMPLE, headers=auth()).json()
         assert body["prediction"] == "M"
         assert body["probability_malignant"] > 0.5
-
 
 class TestMetriques:
     def test_metriques_exposees(self, client):

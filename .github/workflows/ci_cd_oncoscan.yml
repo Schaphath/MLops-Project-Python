@@ -50,6 +50,16 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r Api/requirements_api.txt -r requirements_dev.txt
 
+      # Les données ne sont plus dans git : DVC les télécharge depuis DagsHub.
+      # Secrets GitHub requis : DAGSHUB_TOKEN (jeton DagsHub, sert d'identifiant S3).
+      - name: Pull data (DVC)
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          dvc remote modify origin --local access_key_id "$DAGSHUB_TOKEN"
+          dvc remote modify origin --local secret_access_key "$DAGSHUB_TOKEN"
+          dvc pull
+
       # Erreurs, imports, failles de sécurité courantes (règles dans pyproject.toml)
       - name: Lint (ruff)
         run: ruff check .

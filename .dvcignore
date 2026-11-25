@@ -1,0 +1,5 @@
+# Add patterns of files dvc should ignore, which could improve
+# the performance. Learn more at
+# https://dvc.org/doc/user-guide/dvcignore
+# Fichiers de travail personnels, hors versionnage DVC
+Data/evaluate/juste_pour_tester.csv

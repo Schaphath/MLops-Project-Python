@@ -1,7 +1,7 @@
 <div align="center">
   <img src="Interface/favicon.svg" alt="Logo OncoScan" width="88" height="88">
   <h1>OncoScan</h1>
-  <p><strong>Introduction MLOps avec des outils open source, de la donnée brute au monitoring en production.</strong></p>
+  <p><strong>Introduction au MLOps avec des outils open source, de la donnée brute au monitoring en production.</strong></p>
 
   <p>
     <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
@@ -111,8 +111,8 @@ extérieur). L'API ne voit pas la base : elle n'en a pas besoin.
 **Prérequis** : Docker avec Compose v2, Git. Python 3.12 seulement pour entraîner le modèle ou lancer les tests.
 
 ```bash
-git clone https://github.com/Schaphath/MLops-Project-Tuto-Python.git
-cd MLops-Project-Tuto-Python
+git clone https://github.com/Schaphath/OncoScan-Project.git
+cd OncoScan-Project
 cp .env.example .env
 ```
 

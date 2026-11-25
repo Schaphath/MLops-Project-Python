@@ -1,8 +1,5 @@
 # syntax=docker/dockerfile:1.7
 
-# Version de Python écrite en clair dans les deux FROM (pas d'ARG) :
-# c'est la seule façon pour que Dependabot puisse la mettre à jour.
-
 #---------------#
 #  BUILD STAGE  #
 #---------------#
@@ -19,11 +16,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /build
 
+# Création d'un venv pour isoler les dépendances de l'API
 RUN python -m venv "$VIRTUAL_ENV" && \
     pip install --upgrade pip
 
-# On copie d'abord SEULEMENT les dépendances pour profiter du cache Docker.
-# Les versions doivent être fixées (scikit-learn==1.8.0, celle de l'entraînement).
+# Copie des dépendances & installation de requirements_api.txt  
 COPY Api/requirements_api.txt ./requirements_api.txt
 RUN pip install -r requirements_api.txt
 
@@ -39,14 +36,14 @@ LABEL org.opencontainers.image.title="oncoscan-api" \
       org.opencontainers.image.description="API FastAPI OncoScan (modèle inclus)" \
       org.opencontainers.image.version="${VERSION}"
 
-# MODEL_PATH et MODEL_VERSION sont dans l'image : elle marche seule après un docker pull
+# MODEL_PATH et MODEL_VERSION sont dans l'image : le modèle est figé par le tag d'image.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
     MODEL_PATH=/app/Save_models/oncoscan_pipeline.joblib \
     MODEL_VERSION=${VERSION}
 
-# Bibliothèques système + utilisateur non-root (UID/GID fixes pour Kubernetes, etc.)
+# Bibliothèques système + utilisateur non-root (UID/GID fixes)
 # upgrade : applique les correctifs de sécurité Debian sortis après la création
 # de l'image de base (sinon Trivy bloque la CI sur des failles déjà corrigées)
 RUN apt-get update && \
@@ -67,7 +64,6 @@ WORKDIR /app/api
 COPY Api/ /app/api/
 
 # Le modèle fait partie de l'image : un tag d'image = un modèle précis.
-# Sa fiche JSON l'accompagne (servie sur /model).
 COPY Save_models/oncoscan_pipeline.joblib Save_models/oncoscan_pipeline.json /app/Save_models/
 
 # Plus aucun droit root à partir d'ici
@@ -81,5 +77,5 @@ EXPOSE 8000
 
 STOPSIGNAL SIGTERM
 
-# Format "exec" : uvicorn reçoit directement les signaux d'arrêt
+# Lancement de l'API FastAPI avec uvicorn (serveur ASGI)
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]

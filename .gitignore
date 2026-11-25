@@ -29,10 +29,10 @@ Api/logs/
 # ---------------------------------------------------------------
 # Notes et documents personnels (gardés en local, hors dépôt)
 # ---------------------------------------------------------------
+*.docx
 Ressources_docker/
 commandes_git.txt
 recup_donnees.txt
-Data/evaluate/juste_pour_tester.csv
 
 # ---------------------------------------------------------------
 # Éditeurs et systèmes
@@ -42,3 +42,8 @@ Data/evaluate/juste_pour_tester.csv
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---------------------------------------------------------------
+# Données : versionnées par DVC (voir Data.dvc), stockées sur DagsHub
+# ---------------------------------------------------------------
+/Data

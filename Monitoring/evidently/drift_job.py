@@ -1,4 +1,4 @@
-"""Job de monitoring du modèle OncoScan.
+"""Job de monitoring de notre modèle.
 
 À intervalle régulier :
 1. lit les prédictions récentes dans PostgreSQL (table predictions) ;
@@ -28,15 +28,16 @@ from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
 logger = logging.getLogger("oncoscan_evidently")
 
 # Configuration
 FEATURES = ["perimeter", "concave_points", "texture", "smoothness", "symmetry"]
 REFERENCE_PATH = Path(os.getenv("REFERENCE_PATH", "/app/reference/cancer_select.csv"))
 REPORTS_DIR = Path(os.getenv("REPORTS_DIR", "/app/reports"))
-WINDOW_DAYS = int(os.getenv("WINDOW_DAYS", "30"))         # prédictions analysées
+WINDOW_DAYS = int(os.getenv("WINDOW_DAYS", "10")) # prédictions analysées
 INTERVAL_SECONDS = int(os.getenv("INTERVAL_SECONDS", "3600"))
-MIN_ROWS = int(os.getenv("MIN_ROWS", "30"))               # en dessous, le drift n'a pas de sens
+MIN_ROWS = int(os.getenv("MIN_ROWS", "10")) # en dessous, le drift n'a pas de sens
 KEEP_REPORTS = int(os.getenv("KEEP_REPORTS", "48"))
 PORT = int(os.getenv("PORT", "8085"))
 
@@ -65,14 +66,12 @@ LIVE_FP = Gauge("oncoscan_live_false_positives", "Bénins confirmés prédits ma
 
 NAN = float("nan")
 
-
 def load_reference() -> pd.DataFrame:
     df = pd.read_csv(REFERENCE_PATH)
     missing = set(FEATURES + ["diagnosis"]) - set(df.columns)
     if missing:
         raise RuntimeError(f"Colonnes manquantes dans {REFERENCE_PATH}: {sorted(missing)}")
     return df
-
 
 def load_current() -> pd.DataFrame:
     query = f"""
@@ -85,7 +84,6 @@ def load_current() -> pd.DataFrame:
         cur.execute(query, (WINDOW_DAYS,))
         columns = [c.name for c in cur.description]
         return pd.DataFrame(cur.fetchall(), columns=columns)
-
 
 def run_drift(reference: pd.DataFrame, current: pd.DataFrame) -> Path:
     """Rapport Evidently : drift des 5 variables + drift de la classe prédite."""
@@ -109,7 +107,6 @@ def run_drift(reference: pd.DataFrame, current: pd.DataFrame) -> Path:
     for old in sorted(REPORTS_DIR.glob("drift_*.html"))[:-KEEP_REPORTS]:
         old.unlink(missing_ok=True)
     return path
-
 
 def export_drift_values(result: dict) -> None:
     """Extrait les valeurs du snapshot Evidently vers les gauges Prometheus.
@@ -148,7 +145,6 @@ def export_drift_values(result: dict) -> None:
             drifted += int(is_drift == 1.0)
     logger.info("Drift : %s colonne(s) en drift", drifted)
 
-
 def export_descriptive(reference: pd.DataFrame, current: pd.DataFrame) -> None:
     for feature in FEATURES:
         FEATURE_MEAN.labels(feature=feature, dataset="reference").set(float(reference[feature].mean()))
@@ -157,7 +153,6 @@ def export_descriptive(reference: pd.DataFrame, current: pd.DataFrame) -> None:
     MALIGNANT_SHARE.labels(dataset="reference").set(float((reference["diagnosis"] == "M").mean()))
     MALIGNANT_SHARE.labels(dataset="production").set(
         float((current["prediction"] == "M").mean()) if len(current) else NAN)
-
 
 def export_performance(current: pd.DataFrame) -> None:
     """Performance réelle : prédiction du modèle vs diagnostic confirmé par le médecin."""
@@ -188,7 +183,6 @@ def clear_drift() -> None:
         FEATURE_DRIFT.labels(feature=feature).set(NAN)
         FEATURE_DRIFTED.labels(feature=feature).set(NAN)
 
-
 def run_once(reference: pd.DataFrame) -> None:
     current = load_current()
     if not current.empty:
@@ -205,7 +199,6 @@ def run_once(reference: pd.DataFrame) -> None:
         path = run_drift(reference, current)
         logger.info("Rapport généré : %s (%s prédictions)", path.name, len(current))
 
-
 def loop() -> None:
     reference = load_reference()
     logger.info("Référence : %s lignes (%s)", len(reference), REFERENCE_PATH)
@@ -219,8 +212,7 @@ def loop() -> None:
         LAST_RUN_TS.set(time.time())
         time.sleep(INTERVAL_SECONDS)
 
-
-# Serveur HTTP : /metrics pour Prometheus, rapports HTML pour les humains
+# Serveur HTTP : /metrics pour Prometheus et rapports HTML 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/metrics":
@@ -257,8 +249,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, *args):  # pas de log pour chaque scrape Prometheus
         pass
-
-
+    
 if __name__ == "__main__":
     threading.Thread(target=loop, daemon=True).start()
     logger.info("Serveur de monitoring sur le port %s", PORT)

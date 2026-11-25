@@ -1,6 +1,9 @@
 # Compose de développement : construit les images depuis le code.
 # Publier :  docker compose build && docker compose push
 
+# Nom de projet fixe : sans lui, Docker nomme volumes et réseaux d'après le dossier,
+# et renommer le dossier ferait « disparaître » la base de données.
+name: oncoscan
 
 # Limite la taille des logs
 x-logging: &logging
@@ -29,7 +32,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data # Données conservées même si le conteneur est supprimé
       # Exécuté uniquement à la première création du volume.
-      # Base déjà existante : appliquer Database/migration.sql à la main.
       - ./Database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -54,8 +56,6 @@ services:
     environment:
       API_KEY: ${API_KEY:?API_KEY must be set}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # MODEL_PATH et MODEL_VERSION sont fixés dans l'image (modèle inclus)
-    # Healthcheck défini dans Api/Dockerfile
     ports:
       - "127.0.0.1:8000:8000" # Accès local uniquement (debug, /docs)
     networks:

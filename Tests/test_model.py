@@ -11,20 +11,13 @@ import numpy as np
 import pandas as pd
 import pytest
 import sklearn
-from sklearn.metrics import (
-    brier_score_loss,
-    f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
+from sklearn.metrics import brier_score_loss, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_PATH = BASE_DIR / "Data" / "process" / "cancer_select.csv"
 # Nom fixe produit par Model/train.py
 DEFAULT_MODEL_PATH = BASE_DIR / "Save_models" / "oncoscan_pipeline.joblib"
-
 DATA_PATH = Path(os.getenv("TEST_DATA_PATH", str(DEFAULT_DATA_PATH)))
 MODEL_PATH = Path(os.getenv("MODEL_PATH", str(DEFAULT_MODEL_PATH)))
 
@@ -37,16 +30,12 @@ SELECTED_FEATURES = [
 ]
 
 # Seuils minimaux attendus sur le jeu de test (les mêmes que dans train.py)
-SEUIL_RECALL = 0.95  # on veut rater le moins de tumeurs malignes possible
+SEUIL_RECALL = 0.95  
 SEUIL_PRECISION = 0.90
 SEUIL_AUC = 0.95
 SEUIL_F1 = 0.90
-# Fiabilité des probabilités affichées aux médecins (plus bas = mieux).
-# L'AdaBoost non calibré était autour de 0.08 : on refuse de revenir à ce niveau.
-SEUIL_BRIER = 0.07
-
-# Doit rester identique au split fait à l'entraînement, sinon on évalue sur des données vues
-TEST_SIZE = 0.2
+SEUIL_BRIER = 0.07 # Fiabilité des probabilités affichées aux médecins (plus bas = mieux).
+TEST_SIZE = 0.2 # Doit rester identique au split fait à l'entraînement
 RANDOM_STATE = 42
 
 
@@ -83,12 +72,10 @@ def model_path() -> Path:
     assert path.exists(), f"Modèle introuvable : {path} (lancer Model/train.py)"
     return path
 
-
 @pytest.fixture(scope="module")
 def pipeline(model_path):
     """Charge le modèle final (calibré + seuil de décision)."""
     return joblib.load(model_path)
-
 
 @pytest.fixture(scope="module")
 def metadata(model_path) -> dict:
@@ -97,7 +84,6 @@ def metadata(model_path) -> dict:
     assert path.exists(), f"Fiche de métadonnées introuvable : {path}"
     return json.loads(path.read_text(encoding="utf-8"))
 
-
 @pytest.fixture(scope="module")
 def predictions(dataset, pipeline):
     """Refait le split de test et calcule les prédictions."""
@@ -105,17 +91,15 @@ def predictions(dataset, pipeline):
     y = _normalize_target(dataset["diagnosis"])
 
     _, X_test, _, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
-    )
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y)
 
     return {
         "y_test": y_test.to_numpy(),
         "y_pred": np.asarray(pipeline.predict(X_test)).astype(int),
         # Le modèle final doit toujours fournir des probabilités (affichées dans l'appli)
         "y_proba": pipeline.predict_proba(X_test)[:, 1],
-        "X_test": X_test,
+        "X_test": X_test
     }
-
 
 class TestQualiteDonnees:
     def test_integrite_donnees(self, dataset):
@@ -126,7 +110,6 @@ class TestQualiteDonnees:
     def test_encodage_cible(self, dataset):
         classes = set(dataset["diagnosis"].dropna().unique())
         assert classes in ({"M", "B"}, {0, 1}), f"Classes inattendues : {classes}"
-
 
 class TestCoherenceArtefact:
     """Vérifie que le modèle et sa fiche correspondent à ce que l'API attend."""
@@ -154,7 +137,6 @@ class TestCoherenceArtefact:
         # L'API cherche la classe 1 dans classes_ pour renvoyer la probabilité de malignité
         assert list(pipeline.classes_) == [0, 1], f"classes_ inattendues : {list(pipeline.classes_)}"
 
-
 class TestMetriquesModele:
     def test_recall_critique_medical(self, predictions):
         recall = recall_score(predictions["y_test"], predictions["y_pred"])
@@ -176,7 +158,6 @@ class TestMetriquesModele:
         brier = brier_score_loss(predictions["y_test"], predictions["y_proba"])
         assert brier <= SEUIL_BRIER, f"Probabilités mal calibrées : Brier = {brier:.4f}"
 
-
 class TestRobustesseInference:
     def test_probabilites_valides(self, predictions):
         proba = predictions["y_proba"]
@@ -187,8 +168,7 @@ class TestRobustesseInference:
         attendu = (predictions["y_proba"] >= pipeline.threshold).astype(int)
         np.testing.assert_array_equal(
             predictions["y_pred"], attendu,
-            err_msg="La classe prédite ne correspond pas à proba >= seuil.",
-        )
+            err_msg="La classe prédite ne correspond pas à proba >= seuil.")
 
     def test_inference_mono_exemple(self, pipeline, predictions):
         single_sample = predictions["X_test"].iloc[[0]]

@@ -34,30 +34,28 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
-logger = logging.getLogger("oncoscan_api")
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+logger = logging.getLogger("oncoscan_api")
 
 # Configuration
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = PROJECT_DIR / "Save_models" / "oncoscan_pipeline.joblib"
 
-# Un chemin relatif est pris depuis la racine du projet, pas depuis le dossier
-# où l'on a lancé uvicorn.
+# Un chemin relatif est pris depuis la racine du projet 
 _model_path = Path(os.getenv("MODEL_PATH", str(DEFAULT_MODEL_PATH)))
 MODEL_PATH = _model_path if _model_path.is_absolute() else PROJECT_DIR / _model_path
 MODEL_VERSION = os.getenv("MODEL_VERSION") or os.getenv("VERSION") or "dev"
 
+# Récupération de la clé API dans le fichier .env
 API_KEY = os.getenv("API_KEY")
 
 # Même liste et même ordre qu'à l'entraînement (Model/train.py)
 FEATURE_ORDER = ["perimeter", "concave_points", "texture", "smoothness", "symmetry"]
 
-
 # Schémas
 class PredictionRequest(BaseModel):
-    """Les 5 mesures du noyau cellulaire (valeurs « worst » du jeu WDBC)."""
+    """Les 5 mesures du noyau cellulaire"""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -75,7 +73,7 @@ class PredictionRequest(BaseModel):
         },
     )
 
-    # Bornes larges autour des valeurs vues à l'entraînement.
+    # Etablir les bornes de validation  
     # Elles sont reprises telles quelles dans Database/schema.sql et Interface/app.py.
     perimeter: float = Field(..., gt=40.0, le=250.0)
     concave_points: float = Field(..., ge=0.0, le=0.3)
@@ -83,40 +81,38 @@ class PredictionRequest(BaseModel):
     smoothness: float = Field(..., gt=0.01, le=0.3)
     symmetry: float = Field(..., gt=0.05, le=0.7)
 
-
+# Classe de réponse pour la prédiction
 class PredictionResponse(BaseModel):
     prediction: Literal["M", "B"]
     label: Literal["Maligne", "Bénigne"]
     probability_malignant: float | None = Field(default=None, ge=0.0, le=1.0)
     model_version: str = MODEL_VERSION
 
-
+# Classe de réponse pour le healthcheck
 class HealthResponse(BaseModel):
     status: Literal["healthy", "unhealthy"]
     pipeline_loaded: bool
     model_version: str = MODEL_VERSION
 
-
 # Métriques Prometheus propres au modèle (aucune donnée patient, que des agrégats)
 PREDICTIONS_TOTAL = Counter(
     "oncoscan_predictions_total",
     "Prédictions servies, par classe prédite",
-    ["prediction", "model_version"],
-)
+    ["prediction", "model_version"])
+
 PROBABILITY_MALIGNANT = Histogram(
     "oncoscan_probability_malignant",
     "Probabilité de malignité renvoyée",
     ["model_version"],
-    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
-)
+    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0])
+
 INFERENCE_SECONDS = Histogram(
     "oncoscan_inference_seconds",
     "Temps de calcul du modèle seul (hors réseau et validation)",
     ["model_version"],
-    buckets=[0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
-)
-MODEL_INFO = Info("oncoscan_model", "Modèle actuellement servi par l'API")
+    buckets=[0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0])
 
+MODEL_INFO = Info("oncoscan_model", "Modèle actuellement servi par l'API")
 
 # Chargement du modèle
 def load_pipeline(path: Path):
@@ -126,7 +122,6 @@ def load_pipeline(path: Path):
         return joblib.load(path)
     except Exception as error:
         raise RuntimeError(f"Impossible de charger {path.name}") from error
-
 
 def load_metadata(model_path: Path) -> dict[str, Any]:
     """Lit la fiche JSON écrite par train.py à côté du modèle.
@@ -141,7 +136,6 @@ def load_metadata(model_path: Path) -> dict[str, Any]:
         logger.warning("Fiche du modèle absente ou illisible : %s", path)
         return {}
 
-
 def find_positive_index(pipeline) -> int | None:
     """Position de la classe « maligne » dans predict_proba."""
     if not hasattr(pipeline, "predict_proba"):
@@ -153,7 +147,6 @@ def find_positive_index(pipeline) -> int | None:
     # Sans ce message, l'API renverrait des prédictions sans probabilité sans que personne ne s'en rende compte
     logger.warning("Classe maligne introuvable dans %s : aucune probabilité ne sera renvoyée.", classes)
     return None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -178,21 +171,18 @@ async def lifespan(app: FastAPI):
     yield
     app.state.pipeline = None
 
-
 app = FastAPI(title="OncoScan API", version=MODEL_VERSION, lifespan=lifespan)
 
 # /metrics n'est pas protégé par la clé : le port 8000 n'est ouvert que sur le
-# réseau Docker et sur 127.0.0.1. On exclut /health, appelé toutes les 30 s par
+# réseau Docker et sur 127.0.0.1. On exclut /health, appelé toutes les 30s par
 # le healthcheck, pour ne pas noyer les vraies requêtes dans les statistiques.
 Instrumentator(excluded_handlers=["/metrics", "/health"]).instrument(app).expose(
-    app, include_in_schema=False
-)
+    app, include_in_schema=False)
 
 
 # Authentification
 # APIKeyHeader ajoute le bouton « Authorize » dans /docs
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
 
 def require_api_key(x_api_key: str | None = Security(api_key_header)) -> None:
     # compare_digest : comparaison en temps constant, la durée ne trahit pas la clé
@@ -204,15 +194,12 @@ def require_api_key(x_api_key: str | None = Security(api_key_header)) -> None:
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Clé API invalide ou manquante",
-        )
-
+            detail="Clé API invalide ou manquante")
 
 # Endpoints
 @app.get("/", tags=["Info"])
 def info() -> dict[str, str]:
     return {"name": "OncoScan API", "version": MODEL_VERSION, "status": "online"}
-
 
 @app.get("/health", response_model=HealthResponse, tags=["Info"])
 def health(request: Request, response: Response) -> HealthResponse:
@@ -221,44 +208,43 @@ def health(request: Request, response: Response) -> HealthResponse:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return HealthResponse(
         status="healthy" if pipeline_loaded else "unhealthy",
-        pipeline_loaded=pipeline_loaded,
-    )
-
+        pipeline_loaded=pipeline_loaded)
 
 @app.get("/model", tags=["Info"])
 def model_card(request: Request) -> dict[str, Any]:
     """Ce que l'on sait du modèle servi : algorithme, seuil, scores sur le jeu de test."""
     return {"model_version": MODEL_VERSION, **getattr(request.app.state, "metadata", {})}
 
-
 @app.post(
     "/predict",
     response_model=PredictionResponse,
     tags=["Prediction"],
-    dependencies=[Depends(require_api_key)],
-)
+    dependencies=[Depends(require_api_key)])
+
 def predict(data: PredictionRequest, request: Request) -> PredictionResponse:
     pipeline = getattr(request.app.state, "pipeline", None)
     if pipeline is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Modèle non disponible",
-        )
+            detail="Modèle non disponible")
 
     start = time.perf_counter()
+
     try:
         features = pd.DataFrame([data.model_dump()])[FEATURE_ORDER]
         is_malignant = pipeline.predict(features)[0] in (1, "M")
 
         probability = None
         positive_idx = getattr(request.app.state, "positive_idx", None)
+
         if positive_idx is not None:
             probability = round(float(pipeline.predict_proba(features)[0][positive_idx]), 4)
+    
     except Exception as error:
         logger.exception("Erreur pendant l'inférence")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Erreur interne lors de la prédiction",
+            detail="Erreur interne lors de la prédiction"
         ) from error
 
     elapsed = time.perf_counter() - start
@@ -266,17 +252,16 @@ def predict(data: PredictionRequest, request: Request) -> PredictionResponse:
 
     PREDICTIONS_TOTAL.labels(prediction=prediction, model_version=MODEL_VERSION).inc()
     INFERENCE_SECONDS.labels(model_version=MODEL_VERSION).observe(elapsed)
+    
     if probability is not None:
         PROBABILITY_MALIGNANT.labels(model_version=MODEL_VERSION).observe(probability)
 
     # Une ligne par prédiction, sans aucune donnée patient
     logger.info(
         "prediction=%s proba=%s latency_ms=%.1f version=%s",
-        prediction, probability, elapsed * 1000, MODEL_VERSION,
-    )
+        prediction, probability, elapsed * 1000, MODEL_VERSION)
 
     return PredictionResponse(
         prediction=prediction,
         label="Maligne" if is_malignant else "Bénigne",
-        probability_malignant=probability,
-    )
+        probability_malignant=probability)
